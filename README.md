@@ -177,29 +177,52 @@ transform).
 
 ## Resource use
 
-Measured on Windows 11 with the editor window open and the overlay visible
-(`tools/measure-idle.ps1`, 16 logical cores, 180 s sample, 15 s buckets):
+Measured on Windows 11 (16 logical cores, RTX 3060, 165 Hz panel), release build, with
+the overlay visible. CPU is process CPU time sampled from `Get-Process`; GPU is the
+per-process GPU Engine utilization counters summed over every engine instance belonging
+to the app (18 instances were tracked, so a zero is a real zero rather than a missing
+counter).
 
-```
-RESULT totalCpuMs=813 avgOneCorePct=0.451 avgMachinePct=0.0282
-RESULT avgGpuPct=0.000 maxGpuPct=0.000
-```
+| Scenario | CPU | GPU |
+| --- | --- | --- |
+| Desktop idle, 180 s | 813 ms total, all of it in the first 15 s; 0.0 ms in each of the following 11 samples | 0.00% |
+| Continuously rendering fullscreen 1080p60 video in the foreground, 60 s | **0.0 ms** in every 5 s sample | **0.00%** |
+| Editor open, pointer resting over it, 12 s | **0.0 ms** | 0.00% |
+| Editor actively used: slider dragged continuously, 20 s | ~5.6 s (28-30% of one core, 1.8% of the machine) | 0-2% |
 
-All 813 ms of CPU time happened in the first 15 seconds (font atlas, GL context and the
-preset thumbnails). Every one of the following eleven buckets measured **0.0 ms** of
-process CPU time, which is what the design intends: the overlay thread blocks in
-`GetMessage` and egui only repaints when something changes, so an idle crosshair costs
-nothing between keystrokes. GPU engine utilisation stayed at 0.00% across the whole
-sample (18 engine instances were tracked for the process, so this is a real zero rather
-than a missing counter); the process held 32 MB of dedicated video memory, 99.6 MB of
-working set and 172.7 MB of private commit while idle.
+The overlay costs nothing while something else is drawing. Being a layered window,
+Windows keeps its composited surface, and the app never repaints because the screen
+changed underneath it. The same holds with the editor open and the pointer parked on it.
 
-To reproduce it yourself:
+### Why active editing is not zero
+
+While the pointer moves over the editor, egui repaints at roughly 96 frames per second
+(`--ui-stats` prints frames, preview renders and saves per second), and a full redraw of
+the 1120x760 window costs about 2.9 ms of CPU on this machine. That redraw dominates
+everything else. Measured over the same drag, the released v0.1.1 build (29.3%, 30.3%)
+and the current build (29.8%, 27.7%) are indistinguishable, so the interaction work that
+was removed is not where the CPU goes:
+
+* preset thumbnails are now rasterised at most ~30 times a second instead of once per
+  frame, and not at all when nothing changed;
+* settings and presets are written to disk at most ~3 times a second instead of on every
+  frame (a drag used to serialise every preset around 60 times a second);
+* the preview fingerprint is only computed when a widget actually reported an edit.
+
+Those changes are still right, but they do not move the number: the cost is the redraw
+itself. Going below it would mean capping the editor's frame rate, which eframe does not
+expose, or shrinking the window. The overlay, which is what runs while you play, is not
+involved: it idles at 0.0 ms whether or not you are editing.
+
+To reproduce the idle numbers:
 
 ```powershell
-.\target\release\crosshairx-open.exe
-powershell -NoProfile -ExecutionPolicy Bypass -File tools\measure-idle.ps1 -Seconds 180
+<release exe>
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/measure-idle.ps1 -Seconds 180
 ```
+
+Run the editor with `--ui-stats` to watch its frame, preview and save rates while you use
+it.
 
 ## How this was built
 
