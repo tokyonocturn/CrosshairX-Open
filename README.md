@@ -176,6 +176,32 @@ import/export/round-trip, settings persistence and corruption recovery, and pixe
 rasteriser behaviour (opacity, hidden arms, dot shapes, hollow rings, blur bleed, layer
 transform).
 
+## Resource use
+
+Measured on Windows 11 with the editor window open and the overlay visible
+(`tools/measure-idle.ps1`, 16 logical cores, 180 s sample, 15 s buckets):
+
+```
+RESULT totalCpuMs=813 avgOneCorePct=0.451 avgMachinePct=0.0282
+RESULT avgGpuPct=0.000 maxGpuPct=0.000
+```
+
+All 813 ms of CPU time happened in the first 15 seconds (font atlas, GL context and the
+preset thumbnails). Every one of the following eleven buckets measured **0.0 ms** of
+process CPU time, which is what the design intends: the overlay thread blocks in
+`GetMessage` and egui only repaints when something changes, so an idle crosshair costs
+nothing between keystrokes. GPU engine utilisation stayed at 0.00% across the whole
+sample (18 engine instances were tracked for the process, so this is a real zero rather
+than a missing counter); the process held 32 MB of dedicated video memory, 99.6 MB of
+working set and 172.7 MB of private commit while idle.
+
+To reproduce it yourself:
+
+```powershell
+.	argetelease\crosshairx-open.exe
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\measure-idle.ps1 -Seconds 180
+```
+
 ## How this was built
 
 The original Crosshair X installation was inspected first — its Electron archive, its
