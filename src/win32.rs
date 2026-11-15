@@ -357,7 +357,9 @@ pub fn find_window_by_title(title: &str) -> Hwnd {
         let mut buffer = [0u16; 512];
         let len = unsafe { GetWindowTextW(hwnd, buffer.as_mut_ptr(), buffer.len() as i32) };
         if len > 0 && from_wide(&buffer[..len as usize]) == *wanted {
-            unsafe { *(data as *mut isize) = hwnd; }
+            unsafe {
+                *(data as *mut isize) = hwnd;
+            }
             return 0;
         }
         1
@@ -371,7 +373,10 @@ pub fn find_window_by_title(title: &str) -> Hwnd {
 
 /// Null-terminated UTF-16 literal.
 pub fn wide(text: &str) -> Vec<u16> {
-    OsStr::new(text).encode_wide().chain(std::iter::once(0)).collect()
+    OsStr::new(text)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect()
 }
 
 /// Turn a UTF-16 buffer back into a `String`.
@@ -412,7 +417,9 @@ pub fn monitor_dpi(monitor: Hmonitor) -> u32 {
         if address.is_null() {
             None
         } else {
-            Some(std::mem::transmute::<*mut c_void, GetDpiForMonitorFn>(address))
+            Some(std::mem::transmute::<*mut c_void, GetDpiForMonitorFn>(
+                address,
+            ))
         }
     });
     if let Some(func) = function {

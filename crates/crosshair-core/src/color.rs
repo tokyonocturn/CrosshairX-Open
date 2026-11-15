@@ -26,7 +26,9 @@ impl Rgba8 {
     }
 
     pub fn with_alpha_scale(self, scale: f32) -> Self {
-        let a = (self.a as f32 * scale.clamp(0.0, 1.0)).round().clamp(0.0, 255.0) as u8;
+        let a = (self.a as f32 * scale.clamp(0.0, 1.0))
+            .round()
+            .clamp(0.0, 255.0) as u8;
         Self { a, ..self }
     }
 
@@ -80,13 +82,15 @@ pub fn parse(input: &str) -> Option<Rgba8> {
     }
 
     if lower.starts_with("rgb") {
-        let (body, mul) = if let Some(open) = lower.find('(') {
+        let (body, mul) = {
+            let open = lower.find('(')?;
             let inner = lower[open + 1..].trim_end_matches(')');
             (inner.to_string(), 255.0f32)
-        } else {
-            return None;
         };
-        let parts: Vec<&str> = body.split([',', ' ', '/']).filter(|p| !p.is_empty()).collect();
+        let parts: Vec<&str> = body
+            .split([',', ' ', '/'])
+            .filter(|p| !p.is_empty())
+            .collect();
         if parts.len() < 3 {
             return None;
         }

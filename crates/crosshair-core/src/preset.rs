@@ -27,8 +27,7 @@ pub fn export_json(crosshair: &Crosshair) -> String {
 
 /// Parse a preset document, returning every design it contains.
 pub fn import_str(text: &str) -> Result<Vec<Crosshair>, String> {
-    let value: Value =
-        serde_json::from_str(text).map_err(|e| format!("not valid JSON: {e}"))?;
+    let value: Value = serde_json::from_str(text).map_err(|e| format!("not valid JSON: {e}"))?;
     let mut out = Vec::new();
     collect(&value, &mut out)?;
     if out.is_empty() {

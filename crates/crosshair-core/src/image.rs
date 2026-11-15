@@ -3,12 +3,7 @@
 use std::path::Path;
 
 /// Write straight (non-premultiplied) RGBA pixels to a PNG file.
-pub fn save_rgba_png(
-    path: &Path,
-    width: u32,
-    height: u32,
-    rgba: &[u8],
-) -> Result<(), String> {
+pub fn save_rgba_png(path: &Path, width: u32, height: u32, rgba: &[u8]) -> Result<(), String> {
     let expected = (width as usize) * (height as usize) * 4;
     if rgba.len() != expected {
         return Err(format!(

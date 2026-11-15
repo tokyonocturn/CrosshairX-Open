@@ -5,9 +5,7 @@
 //! conversion. The editor preview uses the same function, so what you see in
 //! the designer is what the overlay draws.
 
-use tiny_skia::{
-    FillRule, Paint, Path, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform,
-};
+use tiny_skia::{FillRule, Paint, Path, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
 
 use crate::color::{self, Rgba8};
 use crate::geom;
@@ -57,14 +55,13 @@ impl Rendered {
     /// Straight (non-premultiplied) RGBA bytes, ready for a GUI texture upload.
     pub fn to_unmultiplied_rgba(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(self.pixmap.data().len());
-        for pixel in self.pixmap.data().chunks_exact(4) {
+        for pixel in self.pixmap.data().as_chunks::<4>().0 {
             let alpha = pixel[3];
             if alpha == 0 {
                 out.extend_from_slice(&[0, 0, 0, 0]);
             } else {
-                let unmultiply = |channel: u8| {
-                    ((channel as u32 * 255) / alpha as u32).min(255) as u8
-                };
+                let unmultiply =
+                    |channel: u8| ((channel as u32 * 255) / alpha as u32).min(255) as u8;
                 out.extend_from_slice(&[
                     unmultiply(pixel[0]),
                     unmultiply(pixel[1]),
@@ -226,7 +223,11 @@ fn draw_dot(pixmap: &mut Pixmap, layer: &Layer, transform: Transform, opacity: f
         0.0
     };
     let outline_paint = paint(color::parse_or_white(&outline.color), outline_opacity);
-    let outline_filter = if outline.blur > 0.0 { outline.blur } else { 0.0 };
+    let outline_filter = if outline.blur > 0.0 {
+        outline.blur
+    } else {
+        0.0
+    };
 
     let draw_shape = |pixmap: &mut Pixmap, color_paint: &Paint<'_>, expand: f32, stroked: bool| {
         match dot.shape {
@@ -295,10 +296,7 @@ fn draw_arms(pixmap: &mut Pixmap, layer: &Layer, transform: Transform, opacity: 
     }
     let outline = &layer.outline;
     let has_outline = outline.draws();
-    let fill = paint(
-        color::parse_or_white(&line.color),
-        line.opacity * opacity,
-    );
+    let fill = paint(color::parse_or_white(&line.color), line.opacity * opacity);
     let outline_paint = paint(
         color::parse_or_white(&outline.color),
         if has_outline {
@@ -333,13 +331,7 @@ fn draw_arms(pixmap: &mut Pixmap, layer: &Layer, transform: Transform, opacity: 
                             let mut stroke = Stroke::default();
                             stroke.width = outline.thickness;
                             stroke.line_join = tiny_skia::LineJoin::Miter;
-                            scratch.stroke_path(
-                                &path,
-                                &outline_paint,
-                                &stroke,
-                                transform,
-                                None,
-                            );
+                            scratch.stroke_path(&path, &outline_paint, &stroke, transform, None);
                         }
                     }
                 }
@@ -425,9 +417,7 @@ pub fn render_sized(crosshair: &Crosshair, opts: &RenderOptions, size: u32) -> O
 /// background).
 pub fn solid(size: u32, rgba: Rgba8) -> Option<Pixmap> {
     let mut pixmap = Pixmap::new(size, size)?;
-    pixmap.fill(tiny_skia::Color::from_rgba8(
-        rgba.r, rgba.g, rgba.b, rgba.a,
-    ));
+    pixmap.fill(tiny_skia::Color::from_rgba8(rgba.r, rgba.g, rgba.b, rgba.a));
     Some(pixmap)
 }
 
@@ -451,7 +441,10 @@ mod tests {
         let cx = rendered.center_x as i32;
         let cy = rendered.center_y as i32;
         // an arm sits a few pixels right of centre
-        assert!(alpha_at(&rendered, cx + 6, cy) > 128, "right arm should be opaque");
+        assert!(
+            alpha_at(&rendered, cx + 6, cy) > 128,
+            "right arm should be opaque"
+        );
         // the gap between centre and arm is empty for the default (gap 4, thickness 2)
         assert_eq!(alpha_at(&rendered, cx + 2, cy), 0);
         // far outside is empty
@@ -521,7 +514,10 @@ mod tests {
             let rendered = render(&crosshair, &RenderOptions::default()).unwrap();
             let cx = rendered.center_x as i32;
             let cy = rendered.center_y as i32;
-            assert!(alpha_at(&rendered, cx, cy) > 0, "{shape:?} centre should be drawn");
+            assert!(
+                alpha_at(&rendered, cx, cy) > 0,
+                "{shape:?} centre should be drawn"
+            );
         }
     }
 
@@ -539,7 +535,10 @@ mod tests {
         let cx = rendered.center_x as i32;
         let cy = rendered.center_y as i32;
         assert_eq!(alpha_at(&rendered, cx, cy), 0, "ring centre must be empty");
-        assert!(alpha_at(&rendered, cx + 6, cy) > 0, "ring edge must be drawn");
+        assert!(
+            alpha_at(&rendered, cx + 6, cy) > 0,
+            "ring edge must be drawn"
+        );
     }
 
     #[test]
@@ -563,7 +562,10 @@ mod tests {
         // three pixels beyond the arm tip is empty when sharp, faint when blurred
         let tip = cx + 4 + 8 + 3;
         assert_eq!(alpha_at(&sharp, tip, cy), 0);
-        assert!(alpha_at(&soft, tip, cy) > 0, "blurred arm should bleed outward");
+        assert!(
+            alpha_at(&soft, tip, cy) > 0,
+            "blurred arm should bleed outward"
+        );
     }
 
     #[test]
@@ -612,8 +614,11 @@ mod tests {
         let mut layer = Layer::default();
         layer.line.opacity = 0.0;
         layer.dot.opacity = 0.0;
-        let rendered = render(&Crosshair::single("empty", layer), &RenderOptions::default())
-            .expect("pixmap allocated");
+        let rendered = render(
+            &Crosshair::single("empty", layer),
+            &RenderOptions::default(),
+        )
+        .expect("pixmap allocated");
         assert!(rendered.pixmap.data().iter().all(|b| *b == 0));
     }
 }

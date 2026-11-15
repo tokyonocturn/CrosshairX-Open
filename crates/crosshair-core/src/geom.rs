@@ -170,10 +170,7 @@ pub fn blur_pad(layer: &Layer) -> f32 {
 
 /// Half extent of a whole design in model units.
 pub fn crosshair_half_extent(layers: &[Layer]) -> f32 {
-    layers
-        .iter()
-        .map(layer_half_extent)
-        .fold(0.0f32, f32::max)
+    layers.iter().map(layer_half_extent).fold(0.0f32, f32::max)
 }
 
 /// Translate a model-space point into image space for a canvas of `size`.
@@ -209,18 +206,53 @@ mod tests {
     fn rectangle_arms_have_expected_edges() {
         let l = line();
         let top = line_rect(&l, Direction::Top);
-        assert_eq!(top, LineRect { x: -1.0, y: -14.0, w: 2.0, h: 10.0 });
+        assert_eq!(
+            top,
+            LineRect {
+                x: -1.0,
+                y: -14.0,
+                w: 2.0,
+                h: 10.0
+            }
+        );
         let bottom = line_rect(&l, Direction::Bottom);
-        assert_eq!(bottom, LineRect { x: -1.0, y: 4.0, w: 2.0, h: 10.0 });
+        assert_eq!(
+            bottom,
+            LineRect {
+                x: -1.0,
+                y: 4.0,
+                w: 2.0,
+                h: 10.0
+            }
+        );
         let left = line_rect(&l, Direction::Left);
-        assert_eq!(left, LineRect { x: -14.0, y: -1.0, w: 10.0, h: 2.0 });
+        assert_eq!(
+            left,
+            LineRect {
+                x: -14.0,
+                y: -1.0,
+                w: 10.0,
+                h: 2.0
+            }
+        );
         let right = line_rect(&l, Direction::Right);
-        assert_eq!(right, LineRect { x: 4.0, y: -1.0, w: 10.0, h: 2.0 });
+        assert_eq!(
+            right,
+            LineRect {
+                x: 4.0,
+                y: -1.0,
+                w: 10.0,
+                h: 2.0
+            }
+        );
     }
 
     #[test]
     fn gap_is_respected_on_every_arm() {
-        let l = Line { offset: 12.0, ..line() };
+        let l = Line {
+            offset: 12.0,
+            ..line()
+        };
         assert_eq!(line_rect(&l, Direction::Right).x, 12.0);
         assert_eq!(line_rect(&l, Direction::Left).x2(), -12.0);
         assert_eq!(line_rect(&l, Direction::Top).y2(), -12.0);
@@ -254,13 +286,32 @@ mod tests {
     #[test]
     fn outline_frames_the_arm() {
         let l = line();
-        let o = Outline { thickness: 1.0, ..Outline::default() };
+        let o = Outline {
+            thickness: 1.0,
+            ..Outline::default()
+        };
         let rects = outline_rects(&l, &o, Direction::Right);
         assert_eq!(rects.len(), 4);
         // top strip sits one pixel above the arm and spans its width plus both sides
-        assert_eq!(rects[0], LineRect { x: 3.0, y: -2.0, w: 12.0, h: 1.0 });
+        assert_eq!(
+            rects[0],
+            LineRect {
+                x: 3.0,
+                y: -2.0,
+                w: 12.0,
+                h: 1.0
+            }
+        );
         // bottom strip sits one pixel below
-        assert_eq!(rects[1], LineRect { x: 3.0, y: 1.0, w: 12.0, h: 1.0 });
+        assert_eq!(
+            rects[1],
+            LineRect {
+                x: 3.0,
+                y: 1.0,
+                w: 12.0,
+                h: 1.0
+            }
+        );
     }
 
     #[test]

@@ -18,7 +18,9 @@ fn count_green(region: (i32, i32, i32, i32)) -> usize {
     let (x, y, w, h) = region;
     match capture_screen(x, y, w, h) {
         Some(bytes) => bytes
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             // BGRA
             .filter(|p| p[1] > 170 && p[2] < 110 && p[0] < 110)
             .count(),
@@ -41,7 +43,10 @@ fn class_name(hwnd: Hwnd) -> String {
 
 pub fn run() -> i32 {
     let mut failures = 0;
-    println!("=== CrosshairX-Open {} self-test ===", crosshair_core::VERSION);
+    println!(
+        "=== CrosshairX-Open {} self-test ===",
+        crosshair_core::VERSION
+    );
     println!();
 
     // ---- displays -------------------------------------------------------
@@ -70,7 +75,9 @@ pub fn run() -> i32 {
                 let opaque = rendered
                     .pixmap
                     .data()
-                    .chunks_exact(4)
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
                     .filter(|p| p[3] > 0)
                     .count();
                 if opaque == 0 {
@@ -88,7 +95,10 @@ pub fn run() -> i32 {
             }
             None => {
                 failures += 1;
-                println!("[FAIL] preset '{}' could not allocate a pixmap", design.name);
+                println!(
+                    "[FAIL] preset '{}' could not allocate a pixmap",
+                    design.name
+                );
             }
         }
     }
@@ -103,7 +113,10 @@ pub fn run() -> i32 {
         Ok(()) => match preset::import_file(&export_path) {
             Ok(imported) => {
                 if imported.len() == 1 && imported[0].name == "Triangle Ticks" {
-                    println!("[ ok ] preset export/import round-trip ({})", imported.len());
+                    println!(
+                        "[ ok ] preset export/import round-trip ({})",
+                        imported.len()
+                    );
                 } else {
                     failures += 1;
                     println!("[FAIL] round-trip returned {} preset(s)", imported.len());
@@ -199,14 +212,20 @@ pub fn run() -> i32 {
         println!("[FAIL] the overlay window was not created");
         return failures;
     }
-    println!("[ ok ] overlay window created (hwnd {hwnd:#x}, class '{}')", class_name(hwnd));
+    println!(
+        "[ ok ] overlay window created (hwnd {hwnd:#x}, class '{}')",
+        class_name(hwnd)
+    );
 
     overlay.notify();
     std::thread::sleep(Duration::from_millis(700));
     let shown = count_green(region);
     println!("[info] green pixels with overlay shown: {shown}");
     if shown > baseline + 20 {
-        println!("[ ok ] the crosshair is composited on screen (+{} px)", shown - baseline);
+        println!(
+            "[ ok ] the crosshair is composited on screen (+{} px)",
+            shown - baseline
+        );
     } else {
         failures += 1;
         println!("[FAIL] the crosshair does not appear on screen");
@@ -288,10 +307,16 @@ pub fn run() -> i32 {
             .map(|d| d.settings.overlay_visible)
             .unwrap_or(true);
         if after != before {
-            println!("[ ok ] global hotkey {} toggled the overlay", toggle.describe());
+            println!(
+                "[ ok ] global hotkey {} toggled the overlay",
+                toggle.describe()
+            );
         } else {
             failures += 1;
-            println!("[FAIL] global hotkey {} did not toggle the overlay", toggle.describe());
+            println!(
+                "[FAIL] global hotkey {} did not toggle the overlay",
+                toggle.describe()
+            );
         }
         let screen_after_toggle = count_green(region);
         if after {
@@ -321,10 +346,14 @@ pub fn run() -> i32 {
         .map(|d| d.settings.offset.x)
         .unwrap_or(f32::NAN);
     if (after_offset - before_offset - 1.0).abs() < 0.01 {
-        println!("[ ok ] position hotkey moved the crosshair 1px (x {before_offset} -> {after_offset})");
+        println!(
+            "[ ok ] position hotkey moved the crosshair 1px (x {before_offset} -> {after_offset})"
+        );
     } else {
         failures += 1;
-        println!("[FAIL] position hotkey did not move the overlay (x {before_offset} -> {after_offset})");
+        println!(
+            "[FAIL] position hotkey did not move the overlay (x {before_offset} -> {after_offset})"
+        );
     }
 
     let mut overlay = overlay;

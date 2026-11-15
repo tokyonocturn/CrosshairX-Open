@@ -361,7 +361,11 @@ pub fn builtin_presets() -> Vec<Crosshair> {
         offset: 5.0,
         rotation: 0.0,
         color: "#00E5FF".to_string(),
-        visible: vec![crate::model::Direction::Left, crate::model::Direction::Right, crate::model::Direction::Top],
+        visible: vec![
+            crate::model::Direction::Left,
+            crate::model::Direction::Right,
+            crate::model::Direction::Top,
+        ],
         ..Line::default()
     };
     t_style.dot.opacity = 1.0;
@@ -433,7 +437,10 @@ mod tests {
         let store = Store::load_from(&dir);
         assert_eq!(store.settings.scale, 1.0);
         assert!(store.warning.is_some());
-        assert!(!store.presets.is_empty(), "builtins fill in for a missing library");
+        assert!(
+            !store.presets.is_empty(),
+            "builtins fill in for a missing library"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -464,7 +471,7 @@ mod tests {
         store.presets = builtin_presets();
         let path = dir.join("one.json");
         store.export_preset("Triangle Ticks", &path).unwrap();
-        let mut other = Store::load_from(&temp_dir("export2"));
+        let mut other = Store::load_from(temp_dir("export2"));
         other.presets.clear();
         store.presets.clear();
         let count = other.import_file(&path).unwrap();

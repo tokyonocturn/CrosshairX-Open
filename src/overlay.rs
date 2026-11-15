@@ -69,7 +69,12 @@ pub fn enumerate_displays() -> Vec<DisplayInfo> {
 
     let mut displays: Vec<DisplayInfo> = Vec::new();
     unsafe {
-        EnumDisplayMonitors(0, std::ptr::null(), callback, &mut displays as *mut _ as isize);
+        EnumDisplayMonitors(
+            0,
+            std::ptr::null(),
+            callback,
+            &mut displays as *mut _ as isize,
+        );
     }
     if displays.is_empty() {
         // Extremely unlikely; fall back to the virtual screen metrics.
@@ -314,7 +319,13 @@ fn register_hotkeys(hwnd: Hwnd, rt: &Arc<Runtime>) {
     };
     let mut log = Vec::new();
     unsafe {
-        for id in [HOTKEY_TOGGLE, HOTKEY_LEFT, HOTKEY_RIGHT, HOTKEY_UP, HOTKEY_DOWN] {
+        for id in [
+            HOTKEY_TOGGLE,
+            HOTKEY_LEFT,
+            HOTKEY_RIGHT,
+            HOTKEY_UP,
+            HOTKEY_DOWN,
+        ] {
             UnregisterHotKey(hwnd, id);
         }
         let vk = vk_from_label(&toggle.key);
@@ -322,10 +333,7 @@ fn register_hotkeys(hwnd: Hwnd, rt: &Arc<Runtime>) {
             Some(vk) => {
                 let ok = RegisterHotKey(hwnd, HOTKEY_TOGGLE, hotkey_modifiers(&toggle), vk);
                 if ok != 0 {
-                    log.push(format!(
-                        "{} toggles the overlay",
-                        toggle.describe()
-                    ));
+                    log.push(format!("{} toggles the overlay", toggle.describe()));
                 } else {
                     log.push(format!(
                         "{} could not be registered (already in use?)",
@@ -397,7 +405,11 @@ fn refresh(hwnd: Hwnd) {
     let Some(rt) = runtime() else { return };
     let (settings, current, displays) = {
         let Ok(data) = rt.data.lock() else { return };
-        (data.settings.clone(), data.current.clone(), data.displays.clone())
+        (
+            data.settings.clone(),
+            data.current.clone(),
+            data.displays.clone(),
+        )
     };
 
     if !settings.overlay_visible {
@@ -445,7 +457,9 @@ fn refresh(hwnd: Hwnd) {
     if needs_new {
         *guard = Surface::new(width, height);
     }
-    let Some(surface) = guard.as_ref() else { return };
+    let Some(surface) = guard.as_ref() else {
+        return;
+    };
 
     // tiny-skia hands us premultiplied RGBA; layered windows want premultiplied BGRA.
     let source = rendered.pixmap.data();
@@ -666,7 +680,13 @@ pub fn spawn(data: Arc<Mutex<AppData>>, wake: Arc<dyn Fn() + Send + Sync>) -> Ov
                 }
             }
 
-            for id in [HOTKEY_TOGGLE, HOTKEY_LEFT, HOTKEY_RIGHT, HOTKEY_UP, HOTKEY_DOWN] {
+            for id in [
+                HOTKEY_TOGGLE,
+                HOTKEY_LEFT,
+                HOTKEY_RIGHT,
+                HOTKEY_UP,
+                HOTKEY_DOWN,
+            ] {
                 unsafe {
                     UnregisterHotKey(hwnd, id);
                 }

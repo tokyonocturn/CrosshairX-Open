@@ -63,8 +63,8 @@ fn main() {
     let mutex_name = win32::wide("Local\\CrosshairX-Open-SingleInstance");
     let mutex = unsafe { win32::CreateMutexW(std::ptr::null(), 0, mutex_name.as_ptr()) };
     if mutex != 0 {
-        let already_running =
-            std::io::Error::last_os_error().raw_os_error() == Some(win32::ERROR_ALREADY_EXISTS as i32);
+        let already_running = std::io::Error::last_os_error().raw_os_error()
+            == Some(win32::ERROR_ALREADY_EXISTS as i32);
         if already_running {
             win32::attach_console();
             eprintln!("CrosshairX-Open is already running.");

@@ -2,13 +2,21 @@
 members = ["crates/crosshair-core"]
 resolver = "2"
 
+[workspace.lints.clippy]
+# Test fixtures read better as "start from the defaults, then change two fields".
+field_reassign_with_default = "allow"
+
 [package]
 name = "crosshairx-open"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.88"
 description = "Free, open-source crosshair overlay for Windows"
 license = "MIT"
 repository = "https://github.com/tokyonocturn/CrosshairX-Open"
+
+[lints]
+workspace = true
 
 [dependencies]
 crosshair-core = { path = "crates/crosshair-core" }

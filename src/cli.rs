@@ -19,8 +19,10 @@ pub fn export_previews(dir: &Path) -> i32 {
             println!("[FAIL] {} could not render", design.name);
             continue;
         };
-        let file: PathBuf =
-            dir.join(format!("{}.png", preset::file_stem(&design.name).to_lowercase()));
+        let file: PathBuf = dir.join(format!(
+            "{}.png",
+            preset::file_stem(&design.name).to_lowercase()
+        ));
         match crosshair_core::save_rgba_png(
             &file,
             rendered.width(),

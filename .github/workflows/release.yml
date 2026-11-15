@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    name: Publish Windows build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Unit tests
+        run: cargo test --workspace --locked
+
+      - name: Release build
+        run: cargo build --release --locked
+
+      - name: Assemble package
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          New-Item -ItemType Directory -Force package | Out-Null
+          Copy-Item target/release/crosshairx-open.exe package/
+          Copy-Item README.md, LICENSE package/
+          $zip = "crosshairx-open-$tag-windows-x64.zip"
+          Compress-Archive -Path package/* -DestinationPath $zip
+          "ZIP=$zip" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Release notes
+        shell: pwsh
+        run: |
+          @'
+          Single-file Windows build (x64). No installer and no runtime dependencies:
+          download crosshairx-open.exe and run it.
+
+          Presets and settings are stored in %APPDATA%\CrosshairX-Open.
+
+          Shortcuts: Alt+Shift+Z toggles the crosshair, Alt+Shift+arrow keys nudge it one pixel.
+          Both can be changed in Settings. See the README for the full feature list.
+          '@ | Out-File -FilePath notes.md -Encoding utf8
+
+      - name: Create GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          gh release create $tag `
+            "target/release/crosshairx-open.exe" `
+            "$env:ZIP" `
+            --repo "${{ github.repository }}" `
+            --title "CrosshairX-Open $tag" `
+            --notes-file notes.md `
+            --generate-notes
+
+      - name: Summary
+        shell: pwsh
+        run: |
+          "Released ${{ github.ref_name }}: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}" >> $env:GITHUB_STEP_SUMMARY

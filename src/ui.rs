@@ -134,7 +134,8 @@ impl App {
             opacity: snap.settings.global_opacity,
             padding: 8.0,
         };
-        if let Some(rendered) = crosshair_core::render_sized(&snap.current, &options, PREVIEW_SIZE) {
+        if let Some(rendered) = crosshair_core::render_sized(&snap.current, &options, PREVIEW_SIZE)
+        {
             let image = egui::ColorImage::from_rgba_unmultiplied(
                 [PREVIEW_SIZE as usize, PREVIEW_SIZE as usize],
                 &rendered.to_unmultiplied_rgba(),
@@ -163,7 +164,6 @@ fn preview_stamp(snap: &Snapshot, zoom: f32) -> u64 {
     zoom.to_bits().hash(&mut hasher);
     hasher.finish()
 }
-
 
 fn apply_theme(ctx: &egui::Context) {
     let mut visuals = egui::Visuals::dark();
@@ -247,22 +247,21 @@ impl eframe::App for App {
                 });
             });
         }
-        let panel_frame = egui::Frame::NONE
-            .inner_margin(egui::Margin {
-                left: 16,
-                right: 16,
-                top: 6,
-                bottom: 8,
-            });
+        let panel_frame = egui::Frame::NONE.inner_margin(egui::Margin {
+            left: 16,
+            right: 16,
+            top: 6,
+            bottom: 8,
+        });
         egui::CentralPanel::default()
             .frame(panel_frame)
             .show(ctx, |ui| match self.page {
-            Page::Designer => self.designer(ui, &mut snap, &mut dirty),
-            Page::Presets => self.presets(ui, &mut snap, &mut dirty),
-            Page::Position => self.position(ui, &mut snap, &mut dirty),
-            Page::Settings => self.settings(ui, &mut snap, &mut dirty),
-            Page::About => self.about(ui),
-        });
+                Page::Designer => self.designer(ui, &mut snap, &mut dirty),
+                Page::Presets => self.presets(ui, &mut snap, &mut dirty),
+                Page::Position => self.position(ui, &mut snap, &mut dirty),
+                Page::Settings => self.settings(ui, &mut snap, &mut dirty),
+                Page::About => self.about(ui),
+            });
 
         if dirty {
             self.preview_stamp = 0;
@@ -310,7 +309,12 @@ impl App {
                 image.size[1] as u32,
                 &rgba,
             ) {
-                Ok(()) => println!("saved {} ({}x{})", path.display(), image.size[0], image.size[1]),
+                Ok(()) => println!(
+                    "saved {} ({}x{})",
+                    path.display(),
+                    image.size[0],
+                    image.size[1]
+                ),
                 Err(error) => println!("snapshot failed: {error}"),
             }
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -331,7 +335,12 @@ impl App {
                             .strong()
                             .color(egui::Color32::WHITE),
                     );
-                    ui.label(egui::RichText::new("-Open").size(18.0).strong().color(ACCENT));
+                    ui.label(
+                        egui::RichText::new("-Open")
+                            .size(18.0)
+                            .strong()
+                            .color(ACCENT),
+                    );
                     ui.add_space(12.0);
                     ui.label(muted("free · offline · no accounts"));
 
@@ -369,15 +378,17 @@ impl App {
                 ui.add_space(10.0);
                 for (page, label) in Page::ALL {
                     let selected = self.page == page;
-                    let text = egui::RichText::new(label)
-                        .size(14.0)
-                        .color(if selected {
-                            egui::Color32::WHITE
-                        } else {
-                            MUTED
-                        });
+                    let text = egui::RichText::new(label).size(14.0).color(if selected {
+                        egui::Color32::WHITE
+                    } else {
+                        MUTED
+                    });
                     let button = egui::Button::new(text)
-                        .fill(if selected { ACCENT_DIM } else { egui::Color32::TRANSPARENT })
+                        .fill(if selected {
+                            ACCENT_DIM
+                        } else {
+                            egui::Color32::TRANSPARENT
+                        })
                         .min_size(egui::vec2(ui.available_width(), 34.0));
                     if ui.add(button).clicked() {
                         self.page = page;
@@ -437,7 +448,9 @@ impl App {
                     changed = true;
                 }
             });
-            ui.label(muted("Saving with an existing name overwrites that preset."));
+            ui.label(muted(
+                "Saving with an existing name overwrites that preset.",
+            ));
         });
 
         card(ui, "LAYERS", |ui| {
@@ -445,11 +458,13 @@ impl App {
                 for index in 0..snap.current.layers.len() {
                     let selected = index == self.selected_layer;
                     if ui
-                        .add(egui::Button::new(format!("{}", index + 1)).fill(if selected {
-                            ACCENT_DIM
-                        } else {
-                            egui::Color32::TRANSPARENT
-                        }))
+                        .add(
+                            egui::Button::new(format!("{}", index + 1)).fill(if selected {
+                                ACCENT_DIM
+                            } else {
+                                egui::Color32::TRANSPARENT
+                            }),
+                        )
                         .on_hover_text(format!("Edit layer {}", index + 1))
                         .clicked()
                     {
@@ -458,10 +473,7 @@ impl App {
                 }
                 ui.separator();
                 if ui
-                    .add_enabled(
-                        snap.current.layers.len() < 8,
-                        egui::Button::new("+ Add"),
-                    )
+                    .add_enabled(snap.current.layers.len() < 8, egui::Button::new("+ Add"))
                     .on_hover_text("Stack another crosshair on top of this one")
                     .clicked()
                 {
@@ -472,10 +484,7 @@ impl App {
                     changed = true;
                 }
                 if ui
-                    .add_enabled(
-                        snap.current.layers.len() > 1,
-                        egui::Button::new("Remove"),
-                    )
+                    .add_enabled(snap.current.layers.len() > 1, egui::Button::new("Remove"))
                     .clicked()
                 {
                     snap.current.layers.remove(self.selected_layer);
@@ -483,9 +492,13 @@ impl App {
                     changed = true;
                 }
             });
-            ui.label(muted("Layers stack in order; each has its own dot, arms and position."));
+            ui.label(muted(
+                "Layers stack in order; each has its own dot, arms and position.",
+            ));
         });
-        self.selected_layer = self.selected_layer.min(snap.current.layers.len().saturating_sub(1));
+        self.selected_layer = self
+            .selected_layer
+            .min(snap.current.layers.len().saturating_sub(1));
         let layer = &mut snap.current.layers[self.selected_layer];
 
         card(ui, "CENTER DOT", |ui| {
@@ -501,11 +514,19 @@ impl App {
             ui.horizontal(|ui| {
                 ui.label("X");
                 changed |= ui
-                    .add(egui::DragValue::new(&mut layer.position.x).speed(0.5).range(-500.0..=500.0))
+                    .add(
+                        egui::DragValue::new(&mut layer.position.x)
+                            .speed(0.5)
+                            .range(-500.0..=500.0),
+                    )
                     .changed();
                 ui.label("Y");
                 changed |= ui
-                    .add(egui::DragValue::new(&mut layer.position.y).speed(0.5).range(-500.0..=500.0))
+                    .add(
+                        egui::DragValue::new(&mut layer.position.y)
+                            .speed(0.5)
+                            .range(-500.0..=500.0),
+                    )
                     .changed();
             });
             changed |= ui
@@ -655,7 +676,10 @@ impl App {
         ));
 
         let (response, painter) = ui.allocate_painter(
-            egui::vec2(ui.available_width().min(side), ui.available_width().min(side)),
+            egui::vec2(
+                ui.available_width().min(side),
+                ui.available_width().min(side),
+            ),
             egui::Sense::hover(),
         );
         let rect = response.rect;
@@ -699,7 +723,10 @@ impl App {
         }
 
         // centre guide
-        let stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_rgba_unmultiplied(92, 148, 255, 70));
+        let stroke = egui::Stroke::new(
+            1.0_f32,
+            egui::Color32::from_rgba_unmultiplied(92, 148, 255, 70),
+        );
         painter.line_segment(
             [
                 egui::pos2(rect.center().x, rect.top()),
@@ -796,7 +823,9 @@ impl App {
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 ui.vertical(|ui| {
-                                    ui.label(egui::RichText::new(&crosshair.name).size(14.0).strong());
+                                    ui.label(
+                                        egui::RichText::new(&crosshair.name).size(14.0).strong(),
+                                    );
                                     ui.label(muted(&describe(&crosshair.layers)));
                                 });
                                 ui.with_layout(
@@ -832,7 +861,9 @@ impl App {
     fn position(&mut self, ui: &mut egui::Ui, snap: &mut Snapshot, dirty: &mut bool) {
         ui.horizontal(|ui| {
             ui.label(heading("Position & Size"));
-            ui.label(muted("centred on the chosen display, nudged with the hotkey"));
+            ui.label(muted(
+                "centred on the chosen display, nudged with the hotkey",
+            ));
         });
         ui.separator();
 
@@ -913,7 +944,10 @@ impl App {
                 .add(egui::Slider::new(&mut snap.settings.scale, 0.25..=6.0).text("Size"))
                 .changed();
             changed |= ui
-                .add(egui::Slider::new(&mut snap.settings.global_opacity, 0.05..=1.0).text("Opacity"))
+                .add(
+                    egui::Slider::new(&mut snap.settings.global_opacity, 0.05..=1.0)
+                        .text("Opacity"),
+                )
                 .changed();
             changed |= ui
                 .checkbox(
@@ -1013,7 +1047,9 @@ impl App {
                     Err(error) => self.status = format!("Startup change failed: {error}"),
                 }
             }
-            ui.label(muted("Adds a per-user Run entry; no service or admin rights."));
+            ui.label(muted(
+                "Adds a per-user Run entry; no service or admin rights.",
+            ));
         });
 
         card(ui, "HOTKEY STATUS", |ui| {
@@ -1090,7 +1126,9 @@ impl App {
         card(ui, "HOW IT WORKS", |ui| {
             ui.label("• Layered Win32 window (WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST).");
             ui.label("• Premultiplied alpha blitted with UpdateLayeredWindow, so no window capture of your desktop is needed.");
-            ui.label("• Per-monitor DPI v2 awareness; sizes are device pixels on the selected display.");
+            ui.label(
+                "• Per-monitor DPI v2 awareness; sizes are device pixels on the selected display.",
+            );
             ui.label("• Global hotkeys via RegisterHotKey on the overlay thread; no input hooks.");
             ui.label("• Repaints only when something changes, so idle CPU use is ~0%.");
         });
@@ -1106,10 +1144,64 @@ impl App {
 }
 
 const KEY_CHOICES: &[&str] = &[
-    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S",
-    "T", "U", "V", "W", "X", "Y", "Z", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "F1", "F2",
-    "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "Space", "Tab", "Insert", "Home",
-    "End", "PageUp", "PageDown", "Backquote", "Minus", "Equals",
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    "H",
+    "I",
+    "J",
+    "K",
+    "L",
+    "M",
+    "N",
+    "O",
+    "P",
+    "Q",
+    "R",
+    "S",
+    "T",
+    "U",
+    "V",
+    "W",
+    "X",
+    "Y",
+    "Z",
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "F1",
+    "F2",
+    "F3",
+    "F4",
+    "F5",
+    "F6",
+    "F7",
+    "F8",
+    "F9",
+    "F10",
+    "F11",
+    "F12",
+    "Space",
+    "Tab",
+    "Insert",
+    "Home",
+    "End",
+    "PageUp",
+    "PageDown",
+    "Backquote",
+    "Minus",
+    "Equals",
 ];
 
 fn describe(layers: &[Layer]) -> String {
@@ -1119,7 +1211,11 @@ fn describe(layers: &[Layer]) -> String {
     };
     let arms = layer.line.visible.len();
     let dot = if layer.dot.opacity > 0.0 {
-        format!("dot {:.0}px {}", layer.dot.diameter, layer.dot.shape.label().to_lowercase())
+        format!(
+            "dot {:.0}px {}",
+            layer.dot.diameter,
+            layer.dot.shape.label().to_lowercase()
+        )
     } else {
         "no dot".to_string()
     };
@@ -1154,4 +1250,3 @@ pub fn run(
         Box::new(move |cc| Ok(Box::new(App::new(cc, snapshot_path, initial_page)))),
     )
 }
-

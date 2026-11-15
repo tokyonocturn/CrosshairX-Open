@@ -9,17 +9,13 @@ use serde::{Deserialize, Serialize};
 /// Shape of the centre dot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum DotShape {
+    #[default]
     Square,
     Circle,
     Ring,
     Diamond,
-}
-
-impl Default for DotShape {
-    fn default() -> Self {
-        Self::Square
-    }
 }
 
 impl DotShape {
@@ -43,15 +39,11 @@ impl DotShape {
 /// Shape of the four crosshair lines.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum LineShape {
+    #[default]
     Rectangle,
     Triangle,
-}
-
-impl Default for LineShape {
-    fn default() -> Self {
-        Self::Rectangle
-    }
 }
 
 impl LineShape {
