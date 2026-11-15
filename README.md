@@ -51,7 +51,6 @@ GNU toolchain (`rustup default stable-x86_64-pc-windows-msvc`, or
 ```bash
 git clone https://github.com/tokyonocturn/CrosshairX-Open.git
 cd CrosshairX-Open
-cargo build --release
 # target/release/crosshairx-open.exe
 ```
 
@@ -198,7 +197,7 @@ working set and 172.7 MB of private commit while idle.
 To reproduce it yourself:
 
 ```powershell
-.	argetelease\crosshairx-open.exe
+.\target\release\crosshairx-open.exe
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\measure-idle.ps1 -Seconds 180
 ```
 
