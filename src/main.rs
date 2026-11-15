@@ -35,6 +35,7 @@ fn main() {
         .position(|a| a == "--ui-snapshot")
         .and_then(|index| args.get(index + 1))
         .map(std::path::PathBuf::from);
+    let ui_stats = args.iter().any(|a| a == "--ui-stats");
     let initial_page = args
         .iter()
         .position(|a| a == "--ui-page")
@@ -56,6 +57,9 @@ fn main() {
         println!("  --export-previews <dir>  write the bundled presets as PNG files");
         println!("  --ui-snapshot <file>     open the editor, save a screenshot, exit");
         println!("  --ui-page <name>         designer|presets|position|settings|about");
+        println!(
+            "  --ui-stats               log editor frames, preview renders and saves per second"
+        );
         return;
     }
 
@@ -72,7 +76,7 @@ fn main() {
         }
     }
 
-    if let Err(error) = ui::run(snapshot, initial_page) {
+    if let Err(error) = ui::run(snapshot, initial_page, ui_stats) {
         win32::attach_console();
         eprintln!("CrosshairX-Open could not start: {error}");
     }

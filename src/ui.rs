@@ -58,6 +58,16 @@ pub struct App {
     page: Page,
     preview: Option<egui::TextureHandle>,
     preview_stamp: u64,
+    preview_zoom: f32,
+    preview_dirty: bool,
+    preview_last: Option<std::time::Instant>,
+    pending_persist: bool,
+    last_persist: Option<std::time::Instant>,
+    stats: bool,
+    stat_frames: u32,
+    stat_previews: u32,
+    stat_commits: u32,
+    stat_last: Option<std::time::Instant>,
     zoom: f32,
     status: String,
     selected_layer: usize,
@@ -73,8 +83,21 @@ impl App {
         cc: &eframe::CreationContext<'_>,
         snapshot_path: Option<std::path::PathBuf>,
         initial_page: Option<Page>,
+        stats_flag: bool,
     ) -> Self {
         apply_theme(&cc.egui_ctx);
+
+        if stats_flag || std::env::var_os("CROSSHAIRX_UI_STATS").is_some() {
+            use eframe::glow::HasContext;
+            match cc.gl.as_ref() {
+                Some(gl) => {
+                    let renderer = unsafe { gl.get_parameter_string(eframe::glow::RENDERER) };
+                    let version = unsafe { gl.get_parameter_string(eframe::glow::VERSION) };
+                    println!("ui-stats renderer='{renderer}' version='{version}'");
+                }
+                None => println!("ui-stats renderer=<none: no glow context>"),
+            }
+        }
 
         let store = Store::load();
         let warning = store.warning.clone();
@@ -90,6 +113,16 @@ impl App {
             page: initial_page.unwrap_or(Page::Designer),
             preview: None,
             preview_stamp: 0,
+            preview_zoom: 0.0,
+            preview_dirty: false,
+            preview_last: None,
+            pending_persist: false,
+            last_persist: None,
+            stats: stats_flag || std::env::var_os("CROSSHAIRX_UI_STATS").is_some(),
+            stat_frames: 0,
+            stat_previews: 0,
+            stat_commits: 0,
+            stat_last: None,
             zoom: 3.0,
             status: String::new(),
             selected_layer: 0,
@@ -112,23 +145,71 @@ impl App {
         }
     }
 
+    /// Push the editor state to the overlay and the shared runtime. Writing to disk
+    /// happens separately in `flush_persist`, because a slider drag calls this once per
+    /// frame and serialising every preset 60 times a second is pure waste.
     fn commit(&mut self, snap: &Snapshot) {
+        self.stat_commits += 1;
         if let Ok(mut data) = self.data.lock() {
             data.settings = snap.settings.clone();
             data.current = snap.current.clone();
             data.presets = snap.presets.clone();
+        }
+        self.overlay.notify();
+        self.pending_persist = true;
+    }
+
+    /// Persist pending edits at most a few times a second, and always on the way out.
+    fn flush_persist(&mut self, ctx: &egui::Context, force: bool) {
+        if !self.pending_persist {
+            return;
+        }
+        let now = std::time::Instant::now();
+        let due = self
+            .last_persist
+            .is_none_or(|last| now.duration_since(last) >= std::time::Duration::from_millis(300));
+        if !due && !force {
+            ctx.request_repaint_after(std::time::Duration::from_millis(120));
+            return;
+        }
+        if let Ok(data) = self.data.lock() {
             let _ = data.save_settings();
             let _ = data.save_presets();
         }
-        self.overlay.notify();
+        self.pending_persist = false;
+        self.last_persist = Some(now);
     }
 
-    fn refresh_preview(&mut self, ctx: &egui::Context, snap: &Snapshot) {
+    fn refresh_preview(&mut self, ctx: &egui::Context, snap: &Snapshot, dirty: bool) {
+        // Nothing can have changed the picture unless a widget reported an edit or the
+        // zoom moved, so most frames skip the hashing and the rasteriser completely.
+        let zoom_changed = self.preview_zoom != self.zoom;
+        if self.preview.is_some() && !dirty && !zoom_changed && !self.preview_dirty {
+            return;
+        }
+        if dirty || zoom_changed {
+            self.preview_dirty = true;
+        }
+        if self.preview.is_some() {
+            if let Some(last) = self.preview_last {
+                if last.elapsed() < std::time::Duration::from_millis(33) {
+                    // Come back for the render we are postponing; dropping it here would
+                    // leave the thumbnail showing the value from before the drag.
+                    ctx.request_repaint_after(std::time::Duration::from_millis(33));
+                    return;
+                }
+            }
+        }
         let stamp = preview_stamp(snap, self.zoom);
         if self.preview.is_some() && stamp == self.preview_stamp {
+            self.preview_zoom = self.zoom;
             return;
         }
         self.preview_stamp = stamp;
+        self.preview_zoom = self.zoom;
+        self.preview_dirty = false;
+        self.preview_last = Some(std::time::Instant::now());
+        self.stat_previews += 1;
         let options = RenderOptions {
             scale: snap.settings.scale * self.zoom,
             opacity: snap.settings.global_opacity,
@@ -230,6 +311,24 @@ fn upsert(presets: &mut Vec<Crosshair>, crosshair: Crosshair) -> usize {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if self.stats {
+            self.stat_frames += 1;
+            let now = std::time::Instant::now();
+            if self.stat_last.is_none() {
+                self.stat_last = Some(now);
+            }
+            let since = self.stat_last.unwrap_or(now);
+            if now.duration_since(since).as_millis() >= 1000 {
+                println!(
+                    "ui-stats frames/s={} previews/s={} commits/s={}",
+                    self.stat_frames, self.stat_previews, self.stat_commits
+                );
+                self.stat_frames = 0;
+                self.stat_previews = 0;
+                self.stat_commits = 0;
+                self.stat_last = Some(now);
+            }
+        }
         let mut snap = self.snapshot();
         let mut dirty = false;
 
@@ -263,12 +362,14 @@ impl eframe::App for App {
                 Page::About => self.about(ui),
             });
 
+        let closing = ctx.input(|input| input.viewport().close_requested());
         if dirty {
-            self.preview_stamp = 0;
+            // No extra repaint request: the input event that produced this edit already
+            // scheduled the frame we are drawing, and asking again draws a second one.
             self.commit(&snap);
-            ctx.request_repaint();
         }
-        self.refresh_preview(ctx, &snap);
+        self.refresh_preview(ctx, &snap, dirty);
+        self.flush_persist(ctx, closing);
         self.maybe_snapshot(ctx);
     }
 }
@@ -1236,6 +1337,7 @@ fn describe(layers: &[Layer]) -> String {
 pub fn run(
     snapshot_path: Option<std::path::PathBuf>,
     initial_page: Option<Page>,
+    stats_flag: bool,
 ) -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -1247,6 +1349,13 @@ pub fn run(
     eframe::run_native(
         "CrosshairX-Open",
         options,
-        Box::new(move |cc| Ok(Box::new(App::new(cc, snapshot_path, initial_page)))),
+        Box::new(move |cc| {
+            Ok(Box::new(App::new(
+                cc,
+                snapshot_path,
+                initial_page,
+                stats_flag,
+            )))
+        }),
     )
 }
