@@ -155,6 +155,7 @@ with three displays it printed:
 [ ok ] clicks pass through (WindowFromPoint -> class 'UnityWndClass')
 [ ok ] hiding the overlay removes it from the screen
 [ ok ] offset moves the crosshair (+192 px at x+20)
+[ ok ] display selection moves the crosshair to Display 2 - 1920x1080 @ 96 DPI
 [ ok ] global hotkey Alt + Shift + Z toggled the overlay
 [ ok ] hotkey hid the overlay from the screen
 [ ok ] position hotkey moved the crosshair 1px (x 20 -> 21)

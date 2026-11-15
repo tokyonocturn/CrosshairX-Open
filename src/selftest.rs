@@ -294,6 +294,46 @@ pub fn run() -> i32 {
         println!("[FAIL] the crosshair did not move with the offset");
     }
 
+    // ---- second display --------------------------------------------------
+    if displays.len() > 1 {
+        let second = displays[1];
+        let second_target = (second.x + second.width / 2, second.y + second.height / 2);
+        let second_region = (second_target.0 - 60, second_target.1 - 60, 120, 120);
+        let before_second = count_green(second_region);
+        let before_first = count_green(region);
+        if let Ok(mut data) = shared.lock() {
+            data.settings.overlay_visible = true;
+            data.settings.monitor = 1;
+            data.settings.offset = Point::ZERO;
+        }
+        overlay.notify();
+        std::thread::sleep(Duration::from_millis(700));
+        let after_second = count_green(second_region);
+        let after_first = count_green(region);
+        if after_second > before_second + 20 && after_first <= before_first + 20 {
+            println!(
+                "[ ok ] display selection moves the crosshair to {} (+{} px, first display cleared)",
+                second.label(),
+                after_second - before_second
+            );
+        } else {
+            failures += 1;
+            println!(
+                "[FAIL] the crosshair did not move to {} (+{} px there, {} px left on the first display)",
+                second.label(),
+                after_second as i64 - before_second as i64,
+                after_first as i64 - before_first as i64
+            );
+        }
+        if let Ok(mut data) = shared.lock() {
+            data.settings.monitor = 0;
+        }
+        overlay.notify();
+        std::thread::sleep(Duration::from_millis(700));
+    } else {
+        println!("[info] only one display attached, skipping the second-display check");
+    }
+
     // Global hotkey: synthesise Alt+Shift+Z and expect the overlay to toggle.
     let toggle = Settings::default().toggle_hotkey.clone();
     if let Some(vk) = overlay::vk_from_label(&toggle.key) {

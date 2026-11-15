@@ -154,6 +154,11 @@ pub const MONITORINFOF_PRIMARY: u32 = 0x0000_0001;
 
 pub const GWL_EXSTYLE: i32 = -20;
 
+pub const SM_XVIRTUALSCREEN: i32 = 76;
+pub const SM_YVIRTUALSCREEN: i32 = 77;
+pub const SM_CXVIRTUALSCREEN: i32 = 78;
+pub const SM_CYVIRTUALSCREEN: i32 = 79;
+
 pub const VK_SHIFT: u8 = 0x10;
 pub const VK_CONTROL: u8 = 0x11;
 pub const VK_MENU: u8 = 0x12;
@@ -426,7 +431,7 @@ pub fn monitor_dpi(monitor: Hmonitor) -> u32 {
         if module == 0 {
             return None;
         }
-        let name = b"GetDpiForMonitor ";
+        let name = b"GetDpiForMonitor\0";
         let address = GetProcAddress(module, name.as_ptr());
         if address.is_null() {
             None
@@ -460,12 +465,23 @@ pub fn capture_screen(x: i32, y: i32, w: i32, h: i32) -> Option<Vec<u8>> {
         if screen == 0 {
             return None;
         }
+        // Blit the whole virtual desktop once. BitBlt rejects source coordinates that
+        // are negative or outside the primary display, which is exactly where a second
+        // monitor usually starts, so addressing the region directly reads nothing.
+        let origin_x = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        let origin_y = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        let full_w = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+        let full_h = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+        if full_w <= 0 || full_h <= 0 {
+            ReleaseDC(0, screen);
+            return None;
+        }
         let memory = CreateCompatibleDC(screen);
         let info = BitmapInfo {
             header: BitmapInfoHeader {
                 bi_size: std::mem::size_of::<BitmapInfoHeader>() as u32,
-                bi_width: w,
-                bi_height: -h,
+                bi_width: full_w,
+                bi_height: -full_h,
                 bi_planes: 1,
                 bi_bit_count: 32,
                 bi_compression: BI_RGB,
@@ -481,12 +497,27 @@ pub fn capture_screen(x: i32, y: i32, w: i32, h: i32) -> Option<Vec<u8>> {
             return None;
         }
         let old = SelectObject(memory, bitmap);
-        let ok = BitBlt(memory, 0, 0, w, h, screen, x, y, SRCCOPY);
+        let ok = BitBlt(
+            memory, 0, 0, full_w, full_h, screen, origin_x, origin_y, SRCCOPY,
+        );
         let mut out = None;
         if ok != 0 {
-            let len = (w as usize) * (h as usize) * 4;
-            let slice = std::slice::from_raw_parts(bits as *const u8, len);
-            out = Some(slice.to_vec());
+            let total = (full_w as usize) * (full_h as usize) * 4;
+            let source = std::slice::from_raw_parts(bits as *const u8, total);
+            let mut buffer = Vec::with_capacity((w as usize) * (h as usize) * 4);
+            for row in 0..h {
+                let sy = y - origin_y + row;
+                for column in 0..w {
+                    let sx = x - origin_x + column;
+                    if sy < 0 || sy >= full_h || sx < 0 || sx >= full_w {
+                        buffer.extend_from_slice(&[0, 0, 0, 0]);
+                        continue;
+                    }
+                    let offset = ((sy as usize * full_w as usize) + sx as usize) * 4;
+                    buffer.extend_from_slice(&source[offset..offset + 4]);
+                }
+            }
+            out = Some(buffer);
         }
         SelectObject(memory, old);
         DeleteObject(bitmap);
