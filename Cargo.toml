@@ -1,0 +1,13 @@
+[workspace]
+members = ["crates/crosshair-core"]
+resolver = "2"
+
+[package]
+name = "crosshairx-open"
+version = "0.1.0"
+edition = "2021"
+description = "Free, open-source crosshair overlay for Windows"
+license = "MIT"
+
+[dependencies]
+crosshair-core = { path = "crates/crosshair-core" }
