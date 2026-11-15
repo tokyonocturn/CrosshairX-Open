@@ -40,11 +40,21 @@ jobs:
         run: cargo build --release --locked
 
       - name: Smoke test the binary
-        run: |
-          .\target\release\crosshairx-open.exe --version
-          .\target\release\crosshairx-open.exe --export-previews previews
-          if (-not (Test-Path previews\classic_cross.png)) { throw "preset rendering produced no PNG" }
         shell: pwsh
+        run: |
+          # The release binary is a GUI-subsystem executable, so PowerShell does not
+          # wait for it on its own; -Wait makes the exit code and output meaningful.
+          $exe = ".	argetelease\crosshairx-open.exe"
+          $version = Start-Process -FilePath $exe -ArgumentList "--version" -Wait -PassThru -NoNewWindow
+          if ($version.ExitCode -ne 0) { throw "--version exited $($version.ExitCode)" }
+
+          $export = Start-Process -FilePath $exe -ArgumentList "--export-previews", "previews" -Wait -PassThru -NoNewWindow
+          if ($export.ExitCode -ne 0) { throw "--export-previews exited $($export.ExitCode)" }
+
+          $png = "previews\classic_cross.png"
+          if (-not (Test-Path $png)) { throw "preset rendering produced no PNG" }
+          if ((Get-Item $png).Length -lt 1000) { throw "rendered PNG is suspiciously small" }
+          Get-ChildItem previews | Select-Object Name, Length | Format-Table
 
       - name: Upload build
         uses: actions/upload-artifact@v4

@@ -65,6 +65,12 @@ cargo run -- --export-previews out/    # render the bundled presets to PNG
 cargo run -- --ui-snapshot shot.png    # save a screenshot of the editor window
 ```
 
+The release executable is built for the Windows GUI subsystem so that double-clicking it
+never opens a console window. When you call a command-line flag from PowerShell, wait for
+it explicitly (`Start-Process .\crosshairx-open.exe -ArgumentList "--export-previews","out" -Wait`),
+because PowerShell does not wait for GUI-subsystem processes on its own. `cmd.exe` and
+Git Bash wait normally.
+
 ## Using it
 
 Start the app, pick a preset or design your own, and leave it running. The overlay is
