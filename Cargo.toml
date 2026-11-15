@@ -8,6 +8,17 @@ version = "0.1.0"
 edition = "2021"
 description = "Free, open-source crosshair overlay for Windows"
 license = "MIT"
+repository = "https://github.com/tokyonocturn/CrosshairX-Open"
 
 [dependencies]
 crosshair-core = { path = "crates/crosshair-core" }
+eframe = { version = "0.31", default-features = false, features = ["default_fonts", "glow"] }
+serde_json = "1"
+rfd = "0.15"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true

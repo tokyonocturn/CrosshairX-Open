@@ -53,6 +53,28 @@ impl Rendered {
     pub fn height(&self) -> u32 {
         self.pixmap.height()
     }
+
+    /// Straight (non-premultiplied) RGBA bytes, ready for a GUI texture upload.
+    pub fn to_unmultiplied_rgba(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(self.pixmap.data().len());
+        for pixel in self.pixmap.data().chunks_exact(4) {
+            let alpha = pixel[3];
+            if alpha == 0 {
+                out.extend_from_slice(&[0, 0, 0, 0]);
+            } else {
+                let unmultiply = |channel: u8| {
+                    ((channel as u32 * 255) / alpha as u32).min(255) as u8
+                };
+                out.extend_from_slice(&[
+                    unmultiply(pixel[0]),
+                    unmultiply(pixel[1]),
+                    unmultiply(pixel[2]),
+                    alpha,
+                ]);
+            }
+        }
+        out
+    }
 }
 
 fn paint(color: Rgba8, opacity: f32) -> Paint<'static> {

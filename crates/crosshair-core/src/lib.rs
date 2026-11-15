@@ -6,12 +6,14 @@
 
 pub mod color;
 pub mod geom;
+pub mod image;
 pub mod model;
 pub mod preset;
 pub mod render;
 pub mod store;
 
 pub use color::Rgba8;
+pub use image::save_rgba_png;
 pub use model::{Crosshair, Direction, Dot, DotShape, Layer, Line, LineShape, Outline, Point};
 pub use render::{render, render_sized, RenderOptions, Rendered};
 pub use store::{Hotkey, MoveShortcut, Settings, Store};
