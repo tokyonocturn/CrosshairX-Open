@@ -12,6 +12,7 @@ use crosshair_core::{
 };
 
 use crate::overlay;
+use crate::startup;
 use crate::win32::*;
 
 fn count_green(region: (i32, i32, i32, i32)) -> usize {
@@ -334,17 +335,29 @@ pub fn run() -> i32 {
         }
     }
 
+    if let Ok(data) = shared.lock() {
+        for line in &data.hotkey_log {
+            println!("[info] hotkey: {line}");
+        }
+    }
+
     // Position hotkey: Alt+Shift+Right must move the crosshair by the step.
     let before_offset = shared
         .lock()
         .map(|d| d.settings.offset.x)
         .unwrap_or(f32::NAN);
-    send_hotkey(0x27, false, true, true, false);
-    std::thread::sleep(Duration::from_millis(350));
-    let after_offset = shared
-        .lock()
-        .map(|d| d.settings.offset.x)
-        .unwrap_or(f32::NAN);
+    let mut after_offset = before_offset;
+    for _ in 0..3 {
+        send_hotkey(0x27, false, true, true, false);
+        std::thread::sleep(Duration::from_millis(300));
+        after_offset = shared
+            .lock()
+            .map(|d| d.settings.offset.x)
+            .unwrap_or(f32::NAN);
+        if (after_offset - before_offset - 1.0).abs() < 0.01 {
+            break;
+        }
+    }
     if (after_offset - before_offset - 1.0).abs() < 0.01 {
         println!(
             "[ ok ] position hotkey moved the crosshair 1px (x {before_offset} -> {after_offset})"
@@ -354,6 +367,28 @@ pub fn run() -> i32 {
         println!(
             "[FAIL] position hotkey did not move the overlay (x {before_offset} -> {after_offset})"
         );
+    }
+
+    // Start with Windows: write the Run entry, read it back, restore the state.
+    let was_enabled = startup::is_launch_on_startup();
+    match startup::set_launch_on_startup(true) {
+        Ok(()) if startup::is_launch_on_startup() => {
+            println!("[ ok ] autostart entry written to HKCU Run and read back");
+        }
+        other => {
+            failures += 1;
+            println!("[FAIL] could not write the autostart entry: {other:?}");
+        }
+    }
+    let restored = startup::set_launch_on_startup(was_enabled);
+    if restored.is_ok() && startup::is_launch_on_startup() == was_enabled {
+        println!(
+            "[ ok ] autostart entry restored to its previous state ({})",
+            if was_enabled { "enabled" } else { "disabled" }
+        );
+    } else {
+        failures += 1;
+        println!("[FAIL] could not restore the autostart entry: {restored:?}");
     }
 
     let mut overlay = overlay;

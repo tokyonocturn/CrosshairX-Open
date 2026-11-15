@@ -159,25 +159,39 @@ pub const VK_CONTROL: u8 = 0x11;
 pub const VK_MENU: u8 = 0x12;
 pub const VK_LWIN: u8 = 0x5B;
 pub const KEYEVENTF_KEYUP: u32 = 0x0002;
+pub const KEYEVENTF_EXTENDEDKEY: u32 = 0x0001;
 
 /// Synthesise a chord press+release (used by the self-test to prove that the
 /// registered global hotkey actually fires).
 pub fn send_hotkey(vk: u8, ctrl: bool, alt: bool, shift: bool, win: bool) {
+    // Real keyboards hold modifiers for tens of milliseconds; injected events with
+    // no gap can arrive faster than hotkey tracking registers them.
+    let gap = || std::thread::sleep(std::time::Duration::from_millis(15));
+    // Arrows, Home/End/PgUp/PgDn, Insert/Delete are extended keys; a synthetic
+    // press without the extended flag does not always match a registered hotkey.
+    let extended = matches!(vk, 0x21..=0x28 | 0x2D..=0x2E);
     unsafe {
         if ctrl {
             keybd_event(VK_CONTROL, 0, 0, 0);
+            gap();
         }
         if alt {
             keybd_event(VK_MENU, 0, 0, 0);
+            gap();
         }
         if shift {
             keybd_event(VK_SHIFT, 0, 0, 0);
+            gap();
         }
         if win {
             keybd_event(VK_LWIN, 0, 0, 0);
         }
-        keybd_event(vk, 0, 0, 0);
-        keybd_event(vk, 0, KEYEVENTF_KEYUP, 0);
+        let flags = if extended { KEYEVENTF_EXTENDEDKEY } else { 0 };
+        gap();
+        keybd_event(vk, 0, flags, 0);
+        gap();
+        keybd_event(vk, 0, flags | KEYEVENTF_KEYUP, 0);
+        gap();
         if win {
             keybd_event(VK_LWIN, 0, KEYEVENTF_KEYUP, 0);
         }

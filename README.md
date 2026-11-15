@@ -152,6 +152,8 @@ with three displays it printed:
 [ ok ] global hotkey Alt + Shift + Z toggled the overlay
 [ ok ] hotkey hid the overlay from the screen
 [ ok ] position hotkey moved the crosshair 1px (x 20 -> 21)
+[ ok ] autostart entry written to HKCU Run and read back
+[ ok ] autostart entry restored to its previous state (disabled)
 [ ok ] stopping the overlay thread tears the window down
 
 === all checks passed ===
