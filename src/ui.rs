@@ -106,18 +106,7 @@ impl App {
         let warning = store.warning.clone();
         let data = Arc::new(Mutex::new(AppData::new(&store)));
         let wake_ctx = cc.egui_ctx.clone();
-        let wake_last = Arc::new(Mutex::new(std::time::Instant::now()));
-        let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            // The overlay asks for a repaint on every refresh; coalesce them so the
-            // editor does not draw a frame per overlay update on top of its own input.
-            if let Ok(mut last) = wake_last.lock() {
-                if last.elapsed() < std::time::Duration::from_millis(50) {
-                    return;
-                }
-                *last = std::time::Instant::now();
-            }
-            wake_ctx.request_repaint();
-        });
+        let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || wake_ctx.request_repaint());
         let overlay = overlay::spawn(data.clone(), wake);
         let launch_on_startup = startup::is_launch_on_startup();
 
@@ -304,7 +293,6 @@ fn apply_theme(ctx: &egui::Context) {
     ctx.set_visuals(visuals);
 
     let mut style = (*ctx.style()).clone();
-    style.animation_time = 0.0;
     style.spacing.item_spacing = egui::vec2(8.0, 7.0);
     style.spacing.button_padding = egui::vec2(10.0, 5.0);
     ctx.set_style(style);

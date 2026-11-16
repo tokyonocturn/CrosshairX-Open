@@ -206,7 +206,7 @@ Measured inside the app with `--ui-stats`, the work that belongs to this code is
 | --- | --- |
 | `App::update` (widgets, preview raster, state commit) | 0.25 ms per frame |
 | Overlay refresh, on its own thread | 0.15 ms per refresh, about 22 per second |
-| egui layout and tessellation, GL draw, present | ~2.2 ms per frame at 90-110 fps |
+| egui layout and tessellation, GL draw, present | ~2.2 ms per frame at 60-110 fps |
 
 What the measurement led to, and what it changed:
 
@@ -215,11 +215,34 @@ What the measurement led to, and what it changed:
   changes, or after the overlay is shown again. Overlay-thread CPU during a drag fell
   from 6.1% to 3.3% of a core, and a refresh fell from 0.55-1.2 ms to 0.15 ms.
 * The preview checkerboard was ~340 filled rectangles per frame; it is one tiled texture.
-* The overlay's repaint request and the deferred preview render each scheduled a frame of
-  their own on top of the input frames. They now coalesce with input: ~110 frames per
-  second became ~90.
+* The deferred preview render scheduled a frame of its own on top of the input frames.
+  It now waits for the next input frame while the pointer is down: ~110 frames per second
+  became ~93. Throttling the overlay's repaint requests as well was tried and dropped -
+  it changed the frame count by less than the run-to-run noise, at the cost of delaying
+  hotkey feedback by up to 50 ms.
 * Preview rasterisation is capped at ~30 per second and settings save at most 3 times a
   second, both previously per frame.
+
+### The cost is per frame, and frames come from input
+
+Two drags with the same slider and different pointer event rates:
+
+| Pointer events | Frames drawn | Editor CPU | CPU per frame |
+| --- | --- | --- | --- |
+| 60 per second | ~93 per second | 27.8% of one core | 2.99 ms |
+| 30 per second | ~61 per second | 17.5% of one core | 2.87 ms |
+
+CPU per frame barely changes, so the cost is a fixed price per frame rather than something
+that amortises: halving the frame rate roughly halves the CPU. egui draws a frame for
+each pointer event and one more for the repaint that follows it, which is why a drag at
+60 events per second costs about 93 frames per second.
+
+That also means the remaining ~2.2 ms is reachable in principle - about 17-18% of a core
+at 60 frames per second - but not from inside this app. eframe 0.31 has no frame-rate cap
+(`NativeOptions` exposes vsync and nothing else, and its renderer ignores egui's repaint
+delay in favour of its own callback), so capping would mean driving winit's event loop
+directly instead of using `eframe::run_native`. If you drag with the editor open, that is
+the trade still on the table.
 
 None of that moved the user-visible number: it was 26-30% before these changes and it is
 26-30% after. The parts attributable to this code are now measured at well under 0.5 ms
