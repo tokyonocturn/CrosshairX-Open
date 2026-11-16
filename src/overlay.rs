@@ -199,10 +199,22 @@ struct Runtime {
     data: Arc<Mutex<AppData>>,
     wake: Arc<dyn Fn() + Send + Sync>,
     surface: Mutex<Option<Surface>>,
+    /// Last rectangle handed to SetWindowPos, so unchanged refreshes skip it.
+    placed: Mutex<Option<(i32, i32, i32, i32)>>,
 }
 
 static RUNTIME: Mutex<Option<Arc<Runtime>>> = Mutex::new(None);
 static OVERLAY_HWND: AtomicIsize = AtomicIsize::new(0);
+static STATS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Turn on per-refresh timing on the overlay thread (used by `--ui-stats`).
+pub fn set_stats(on: bool) {
+    STATS.store(on, Ordering::SeqCst);
+}
+
+fn stats_on() -> bool {
+    STATS.load(Ordering::Relaxed)
+}
 
 const WINDOW_CLASS: &str = "CrosshairXOpenOverlay";
 const WINDOW_TITLE: &str = "__CROSSHAIRX_OPEN_OVERLAY";
@@ -403,6 +415,7 @@ fn handle_hotkey(id: i32) {
 /// Re-render the crosshair and push it to the layered window.
 fn refresh(hwnd: Hwnd) {
     let Some(rt) = runtime() else { return };
+    let t_start = std::time::Instant::now();
     let (settings, current, displays) = {
         let Ok(data) = rt.data.lock() else { return };
         (
@@ -415,6 +428,10 @@ fn refresh(hwnd: Hwnd) {
     if !settings.overlay_visible {
         unsafe {
             ShowWindow(hwnd, SW_HIDE);
+        }
+        // Forget where the window was, so turning the overlay back on re-places it.
+        if let Ok(mut slot) = rt.placed.lock() {
+            *slot = None;
         }
         return;
     }
@@ -435,9 +452,11 @@ fn refresh(hwnd: Hwnd) {
         opacity: settings.global_opacity,
         padding: 2.0,
     };
+    let t_render_start = std::time::Instant::now();
     let Some(rendered) = render(&current, &options) else {
         return;
     };
+    let render_us = t_render_start.elapsed().as_micros();
 
     // Model space has +Y up; the screen has +Y down.
     let target_x = display.x + display.width / 2 + settings.offset.x.round() as i32;
@@ -497,15 +516,43 @@ fn refresh(hwnd: Hwnd) {
             ULW_ALPHA,
         );
         ReleaseDC(0, screen);
-        SetWindowPos(
-            hwnd,
-            HWND_TOPMOST,
-            left,
-            top,
-            width as i32,
-            height as i32,
-            SWP_NOACTIVATE | SWP_SHOWWINDOW,
-        );
+        let ulw_us = t_render_start.elapsed().as_micros() - render_us;
+        let t_swp = std::time::Instant::now();
+        // UpdateLayeredWindow already moved and sized the window, and WS_EX_TOPMOST was
+        // set at creation, so SetWindowPos is only needed to show it or to place it when
+        // the crosshair's own rectangle changed. Calling it on every refresh costs more
+        // than the render and the blit together.
+        let geometry = (left, top, width as i32, height as i32);
+        let needs_placement = match rt.placed.lock() {
+            Ok(mut slot) => {
+                let changed = *slot != Some(geometry);
+                if changed {
+                    *slot = Some(geometry);
+                }
+                changed
+            }
+            Err(_) => true,
+        };
+        if needs_placement {
+            SetWindowPos(
+                hwnd,
+                HWND_TOPMOST,
+                left,
+                top,
+                width as i32,
+                height as i32,
+                SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            );
+        }
+        if stats_on() {
+            println!(
+                "overlay-ms render={:.3} blit={:.3} swp={:.3} total={:.3}",
+                render_us as f64 / 1000.0,
+                ulw_us as f64 / 1000.0,
+                t_swp.elapsed().as_micros() as f64 / 1000.0,
+                t_start.elapsed().as_micros() as f64 / 1000.0
+            );
+        }
     }
 }
 
@@ -661,6 +708,7 @@ pub fn spawn(data: Arc<Mutex<AppData>>, wake: Arc<dyn Fn() + Send + Sync>) -> Ov
                 data,
                 wake,
                 surface: Mutex::new(None),
+                placed: Mutex::new(None),
             });
             if let Ok(mut global) = RUNTIME.lock() {
                 *global = Some(rt.clone());

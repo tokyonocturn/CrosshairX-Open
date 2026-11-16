@@ -375,10 +375,24 @@ pub fn run() -> i32 {
         }
     }
 
+    let blocked = shared
+        .lock()
+        .map(|data| {
+            data.hotkey_log
+                .iter()
+                .any(|line| line.contains("could not be registered"))
+        })
+        .unwrap_or(false);
     if let Ok(data) = shared.lock() {
         for line in &data.hotkey_log {
             println!("[info] hotkey: {line}");
         }
+    }
+    if blocked {
+        failures += 1;
+        println!(
+            "[FAIL] a global hotkey could not be registered: another CrosshairX-Open instance or another app owns it, so the checks below cannot pass"
+        );
     }
 
     // Position hotkey: Alt+Shift+Right must move the crosshair by the step.

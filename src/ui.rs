@@ -61,12 +61,14 @@ pub struct App {
     preview_zoom: f32,
     preview_dirty: bool,
     preview_last: Option<std::time::Instant>,
+    checker: Option<egui::TextureHandle>,
     pending_persist: bool,
     last_persist: Option<std::time::Instant>,
     stats: bool,
     stat_frames: u32,
     stat_previews: u32,
     stat_commits: u32,
+    stat_update_us: u64,
     stat_last: Option<std::time::Instant>,
     zoom: f32,
     status: String,
@@ -88,6 +90,7 @@ impl App {
         apply_theme(&cc.egui_ctx);
 
         if stats_flag || std::env::var_os("CROSSHAIRX_UI_STATS").is_some() {
+            crate::overlay::set_stats(true);
             use eframe::glow::HasContext;
             match cc.gl.as_ref() {
                 Some(gl) => {
@@ -103,7 +106,18 @@ impl App {
         let warning = store.warning.clone();
         let data = Arc::new(Mutex::new(AppData::new(&store)));
         let wake_ctx = cc.egui_ctx.clone();
-        let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || wake_ctx.request_repaint());
+        let wake_last = Arc::new(Mutex::new(std::time::Instant::now()));
+        let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            // The overlay asks for a repaint on every refresh; coalesce them so the
+            // editor does not draw a frame per overlay update on top of its own input.
+            if let Ok(mut last) = wake_last.lock() {
+                if last.elapsed() < std::time::Duration::from_millis(50) {
+                    return;
+                }
+                *last = std::time::Instant::now();
+            }
+            wake_ctx.request_repaint();
+        });
         let overlay = overlay::spawn(data.clone(), wake);
         let launch_on_startup = startup::is_launch_on_startup();
 
@@ -116,12 +130,14 @@ impl App {
             preview_zoom: 0.0,
             preview_dirty: false,
             preview_last: None,
+            checker: None,
             pending_persist: false,
             last_persist: None,
             stats: stats_flag || std::env::var_os("CROSSHAIRX_UI_STATS").is_some(),
             stat_frames: 0,
             stat_previews: 0,
             stat_commits: 0,
+            stat_update_us: 0,
             stat_last: None,
             zoom: 3.0,
             status: String::new(),
@@ -193,9 +209,12 @@ impl App {
         if self.preview.is_some() {
             if let Some(last) = self.preview_last {
                 if last.elapsed() < std::time::Duration::from_millis(33) {
-                    // Come back for the render we are postponing; dropping it here would
-                    // leave the thumbnail showing the value from before the drag.
-                    ctx.request_repaint_after(std::time::Duration::from_millis(33));
+                    // Come back for the render we are postponing, but only when no input
+                    // is arriving: during a drag the events themselves produce the frame,
+                    // and asking for one on top doubles the editor's frame rate.
+                    if !ctx.input(|input| input.pointer.any_down()) {
+                        ctx.request_repaint_after(std::time::Duration::from_millis(33));
+                    }
                     return;
                 }
             }
@@ -246,6 +265,30 @@ fn preview_stamp(snap: &Snapshot, zoom: f32) -> u64 {
     hasher.finish()
 }
 
+const CHECKER_TILE: usize = 32;
+const CHECKER_OPTIONS: egui::TextureOptions = egui::TextureOptions {
+    magnification: egui::TextureFilter::Nearest,
+    minification: egui::TextureFilter::Nearest,
+    wrap_mode: egui::TextureWrapMode::Repeat,
+    mipmap_mode: None,
+};
+
+fn checker_image() -> egui::ColorImage {
+    let light = egui::Color32::from_rgb(20, 22, 27);
+    let dark = egui::Color32::from_rgb(12, 13, 17);
+    let mut pixels = Vec::with_capacity(CHECKER_TILE * CHECKER_TILE);
+    for y in 0..CHECKER_TILE {
+        for x in 0..CHECKER_TILE {
+            let even = ((x / 16) + (y / 16)) % 2 == 0;
+            pixels.push(if even { light } else { dark });
+        }
+    }
+    egui::ColorImage {
+        size: [CHECKER_TILE, CHECKER_TILE],
+        pixels,
+    }
+}
+
 fn apply_theme(ctx: &egui::Context) {
     let mut visuals = egui::Visuals::dark();
     visuals.panel_fill = PANEL;
@@ -261,6 +304,7 @@ fn apply_theme(ctx: &egui::Context) {
     ctx.set_visuals(visuals);
 
     let mut style = (*ctx.style()).clone();
+    style.animation_time = 0.0;
     style.spacing.item_spacing = egui::vec2(8.0, 7.0);
     style.spacing.button_padding = egui::vec2(10.0, 5.0);
     ctx.set_style(style);
@@ -320,15 +364,20 @@ impl eframe::App for App {
             let since = self.stat_last.unwrap_or(now);
             if now.duration_since(since).as_millis() >= 1000 {
                 println!(
-                    "ui-stats frames/s={} previews/s={} commits/s={}",
-                    self.stat_frames, self.stat_previews, self.stat_commits
+                    "ui-stats frames/s={} previews/s={} commits/s={} updateMs={:.3}",
+                    self.stat_frames,
+                    self.stat_previews,
+                    self.stat_commits,
+                    self.stat_update_us as f64 / self.stat_frames.max(1) as f64 / 1000.0
                 );
+                self.stat_update_us = 0;
                 self.stat_frames = 0;
                 self.stat_previews = 0;
                 self.stat_commits = 0;
                 self.stat_last = Some(now);
             }
         }
+        let frame_start = std::time::Instant::now();
         let mut snap = self.snapshot();
         let mut dirty = false;
 
@@ -371,6 +420,7 @@ impl eframe::App for App {
         self.refresh_preview(ctx, &snap, dirty);
         self.flush_persist(ctx, closing);
         self.maybe_snapshot(ctx);
+        self.stat_update_us += frame_start.elapsed().as_micros() as u64;
     }
 }
 
@@ -785,29 +835,21 @@ impl App {
         );
         let rect = response.rect;
         painter.rect_filled(rect, 0, egui::Color32::from_rgb(12, 13, 17));
-        // checkerboard so transparency is obvious
-        let cell: f32 = 16.0;
-        let mut y = rect.top();
-        let mut row = 0;
-        while y < rect.bottom() {
-            let mut x = rect.left();
-            let mut col = 0;
-            while x < rect.right() {
-                if (row + col) % 2 == 0 {
-                    painter.rect_filled(
-                        egui::Rect::from_min_size(
-                            egui::pos2(x, y),
-                            egui::vec2(cell.min(rect.right() - x), cell.min(rect.bottom() - y)),
-                        ),
-                        0,
-                        egui::Color32::from_rgb(20, 22, 27),
-                    );
-                }
-                x += cell;
-                col += 1;
-            }
-            y += cell;
-            row += 1;
+        // Checkerboard so transparency is obvious. It is one tiled 32x32 texture rather
+        // than ~340 filled rectangles: at ~100 repaints a second the shape count showed
+        // up in the editor's CPU cost.
+        if self.checker.is_none() {
+            let ctx = ui.ctx().clone();
+            self.checker =
+                Some(ctx.load_texture("preview-checker", checker_image(), CHECKER_OPTIONS));
+        }
+        if let Some(checker) = &self.checker {
+            let tile = 32.0_f32;
+            let uv = egui::Rect::from_min_max(
+                egui::pos2(0.0, 0.0),
+                egui::pos2(rect.width() / tile, rect.height() / tile),
+            );
+            painter.image(checker.id(), rect, uv, egui::Color32::WHITE);
         }
 
         if let Some(texture) = &self.preview {

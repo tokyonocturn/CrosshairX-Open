@@ -8,7 +8,7 @@ field_reassign_with_default = "allow"
 
 [package]
 name = "crosshairx-open"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 rust-version = "1.88"
 description = "Free, open-source crosshair overlay for Windows"

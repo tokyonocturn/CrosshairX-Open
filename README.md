@@ -188,31 +188,45 @@ counter).
 | Desktop idle, 180 s | 813 ms total, all of it in the first 15 s; 0.0 ms in each of the following 11 samples | 0.00% |
 | Continuously rendering fullscreen 1080p60 video in the foreground, 60 s | **0.0 ms** in every 5 s sample | **0.00%** |
 | Editor open, pointer resting over it, 12 s | **0.0 ms** | 0.00% |
-| Editor actively used: slider dragged continuously, 20 s | ~5.6 s (28-30% of one core, 1.8% of the machine) | 0-2% |
+| Editor actively used: slider dragged continuously, 20 s | ~5 s (26-30% of one core, ~1.7% of the machine) | 0-2% |
 
 The overlay costs nothing while something else is drawing. Being a layered window,
 Windows keeps its composited surface, and the app never repaints because the screen
 changed underneath it. The same holds with the editor open and the pointer parked on it.
 
-### Why active editing is not zero
+### Editing costs real CPU
 
-While the pointer moves over the editor, egui repaints at roughly 96 frames per second
-(`--ui-stats` prints frames, preview renders and saves per second), and a full redraw of
-the 1120x760 window costs about 2.9 ms of CPU on this machine. That redraw dominates
-everything else. Measured over the same drag, the released v0.1.1 build (29.3%, 30.3%)
-and the current build (29.8%, 27.7%) are indistinguishable, so the interaction work that
-was removed is not where the CPU goes:
+Dragging a slider for 20 s costs about 5 s of CPU: **26-30% of one core**, roughly 1.7%
+of a 16-core machine. That is not near zero, and it is the editor window, not the overlay:
+egui repaints the whole window about 90-110 times a second while the pointer moves.
 
-* preset thumbnails are now rasterised at most ~30 times a second instead of once per
-  frame, and not at all when nothing changed;
-* settings and presets are written to disk at most ~3 times a second instead of on every
-  frame (a drag used to serialise every preset around 60 times a second);
-* the preview fingerprint is only computed when a widget actually reported an edit.
+Measured inside the app with `--ui-stats`, the work that belongs to this code is small:
 
-Those changes are still right, but they do not move the number: the cost is the redraw
-itself. Going below it would mean capping the editor's frame rate, which eframe does not
-expose, or shrinking the window. The overlay, which is what runs while you play, is not
-involved: it idles at 0.0 ms whether or not you are editing.
+| Where a frame goes | Cost |
+| --- | --- |
+| `App::update` (widgets, preview raster, state commit) | 0.25 ms per frame |
+| Overlay refresh, on its own thread | 0.15 ms per refresh, about 22 per second |
+| egui layout and tessellation, GL draw, present | ~2.2 ms per frame at 90-110 fps |
+
+What the measurement led to, and what it changed:
+
+* `SetWindowPos` ran on every overlay refresh and cost 0.35-1.03 ms - more than the
+  crosshair render and the blit combined. It now runs only when the crosshair rectangle
+  changes, or after the overlay is shown again. Overlay-thread CPU during a drag fell
+  from 6.1% to 3.3% of a core, and a refresh fell from 0.55-1.2 ms to 0.15 ms.
+* The preview checkerboard was ~340 filled rectangles per frame; it is one tiled texture.
+* The overlay's repaint request and the deferred preview render each scheduled a frame of
+  their own on top of the input frames. They now coalesce with input: ~110 frames per
+  second became ~90.
+* Preview rasterisation is capped at ~30 per second and settings save at most 3 times a
+  second, both previously per frame.
+
+None of that moved the user-visible number: it was 26-30% before these changes and it is
+26-30% after. The parts attributable to this code are now measured at well under 0.5 ms
+per frame, but they were never the bulk. The remaining ~2.2 ms per frame is inside egui's
+per-frame pipeline and the OpenGL present at ~90-110 Hz. Lowering it would mean capping
+the editor's frame rate, which eframe does not expose, or a smaller window. Closing the
+editor removes it entirely while leaving the overlay running.
 
 To reproduce the idle numbers:
 
