@@ -62,6 +62,7 @@ pub struct App {
     preview_dirty: bool,
     preview_last: Option<std::time::Instant>,
     checker: Option<egui::TextureHandle>,
+    frame_started: Option<std::time::Instant>,
     pending_persist: bool,
     last_persist: Option<std::time::Instant>,
     stats: bool,
@@ -120,6 +121,7 @@ impl App {
             preview_dirty: false,
             preview_last: None,
             checker: None,
+            frame_started: None,
             pending_persist: false,
             last_persist: None,
             stats: stats_flag || std::env::var_os("CROSSHAIRX_UI_STATS").is_some(),
@@ -278,6 +280,9 @@ fn checker_image() -> egui::ColorImage {
     }
 }
 
+/// The editor's frame budget; one frame every 16.67 ms is 60 per second.
+const FRAME_PERIOD: std::time::Duration = std::time::Duration::from_micros(16_667);
+
 fn apply_theme(ctx: &egui::Context) {
     let mut visuals = egui::Visuals::dark();
     visuals.panel_fill = PANEL;
@@ -343,6 +348,18 @@ fn upsert(presets: &mut Vec<Crosshair>, crosshair: Crosshair) -> usize {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Cap the editor at 60 frames a second. eframe offers no frame-rate limit and
+        // draws a frame per input event, so on a fast panel a drag cost ~93 frames a
+        // second at ~3 ms each; sleeping out the rest of the period makes the frames that
+        // arrive during it draw together on the next one.
+        let tick = std::time::Instant::now();
+        if let Some(previous) = self.frame_started {
+            let elapsed = tick.duration_since(previous);
+            if elapsed < FRAME_PERIOD {
+                std::thread::sleep(FRAME_PERIOD - elapsed);
+            }
+        }
+        self.frame_started = Some(std::time::Instant::now());
         if self.stats {
             self.stat_frames += 1;
             let now = std::time::Instant::now();
@@ -365,6 +382,7 @@ impl eframe::App for App {
                 self.stat_last = Some(now);
             }
         }
+        // Timed after the cap's sleep, so `updateMs` is this frame's work.
         let frame_start = std::time::Instant::now();
         let mut snap = self.snapshot();
         let mut dirty = false;

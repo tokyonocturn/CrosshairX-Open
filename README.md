@@ -188,68 +188,58 @@ counter).
 | Desktop idle, 180 s | 813 ms total, all of it in the first 15 s; 0.0 ms in each of the following 11 samples | 0.00% |
 | Continuously rendering fullscreen 1080p60 video in the foreground, 60 s | **0.0 ms** in every 5 s sample | **0.00%** |
 | Editor open, pointer resting over it, 12 s | **0.0 ms** | 0.00% |
-| Editor actively used: slider dragged continuously, 20 s | ~5 s (26-30% of one core, ~1.7% of the machine) | 0-2% |
+| Editor actively used: slider dragged continuously, 20 s | ~2.7 s (13-14% of one core, ~0.9% of the machine) | 0-2% |
 
 The overlay costs nothing while something else is drawing. Being a layered window,
 Windows keeps its composited surface, and the app never repaints because the screen
 changed underneath it. The same holds with the editor open and the pointer parked on it.
 
-### Editing costs real CPU
+### Editing costs CPU, and the editor is now capped at 60 frames a second
 
-Dragging a slider for 20 s costs about 5 s of CPU: **26-30% of one core**, roughly 1.7%
-of a 16-core machine. That is not near zero, and it is the editor window, not the overlay:
-egui repaints the whole window about 90-110 times a second while the pointer moves.
+Dragging a slider for 20 s on a 165 Hz panel costs about **2.7 s of CPU (13-14% of one
+core)**. Before the cap it cost about **5.6 s (28% of one core)**: egui draws a frame per
+pointer event plus a follow-up repaint, which came to ~93 frames a second at ~3 ms each.
 
-Measured inside the app with `--ui-stats`, the work that belongs to this code is small:
+| | Frames per second | Editor CPU | CPU per frame |
+| --- | --- | --- | --- |
+| Before the cap | ~93 | 27.8% of one core | 2.99 ms |
+| With the cap | 59 | 12.4%, 13.75%, 14.3% over three 15 s drags | ~2.4 ms |
+
+The cap is a 16.67 ms frame budget the editor sleeps out when a frame finishes early
+(`FRAME_PERIOD` in `src/ui.rs`); eframe has no frame-rate option of its own. It costs up to
+one frame of latency - input is drawn on the next slot instead of immediately - and in
+exchange the editor no longer draws 90+ frames to show 60 pointer positions. Drags still
+write settings ~30 times a second and the preview still rasterises ~28 times a second, so
+the interaction itself is unchanged.
+
+Where a frame goes, measured with `--ui-stats`:
 
 | Where a frame goes | Cost |
 | --- | --- |
-| `App::update` (widgets, preview raster, state commit) | 0.25 ms per frame |
-| Overlay refresh, on its own thread | 0.15 ms per refresh, about 22 per second |
-| egui layout and tessellation, GL draw, present | ~2.2 ms per frame at 60-110 fps |
+| `App::update` (widgets, preview raster, state commit) | 0.25 ms of work uncapped, 0.41 ms at 60 fps - the same commits and previews spread over fewer frames |
+| Overlay refresh, on its own thread | 0.18 ms per refresh, about 22 per second |
+| egui layout and tessellation, GL draw, present | the remainder, ~2.4 ms per frame |
 
-What the measurement led to, and what it changed:
+Earlier measurements that led here, and what each one changed:
 
 * `SetWindowPos` ran on every overlay refresh and cost 0.35-1.03 ms - more than the
-  crosshair render and the blit combined. It now runs only when the crosshair rectangle
-  changes, or after the overlay is shown again. Overlay-thread CPU during a drag fell
-  from 6.1% to 3.3% of a core, and a refresh fell from 0.55-1.2 ms to 0.15 ms.
+  crosshair render and the blit combined. It now runs only to show the window or when the
+  window is not where the crosshair belongs. A refresh fell from 0.55-1.2 ms to 0.18 ms.
+* Placement is checked against the window's real rectangle rather than a remembered one,
+  because the OS moves the window behind the app's back on a resolution change, a DPI
+  change, an unplugged display or a re-stacking. That check measures 0.001 ms.
+  `WM_DPICHANGED` and `WM_SETTINGCHANGE` now re-enumerate displays the way
+  `WM_DISPLAYCHANGE` already did, and `--self-test` covers an externally moved window and
+  a posted display change.
 * The preview checkerboard was ~340 filled rectangles per frame; it is one tiled texture.
 * The deferred preview render scheduled a frame of its own on top of the input frames.
-  It now waits for the next input frame while the pointer is down: ~110 frames per second
-  became ~93. Throttling the overlay's repaint requests as well was tried and dropped -
-  it changed the frame count by less than the run-to-run noise, at the cost of delaying
-  hotkey feedback by up to 50 ms.
-* Preview rasterisation is capped at ~30 per second and settings save at most 3 times a
-  second, both previously per frame.
+  It now waits for the next input frame while the pointer is down, and preview
+  rasterisation is capped at ~30 per second (it used to run per frame).
+* Throttling the overlay's repaint requests was tried and dropped: it changed the frame
+  count by less than run-to-run noise and delayed hotkey feedback by up to 50 ms.
 
-### The cost is per frame, and frames come from input
-
-Two drags with the same slider and different pointer event rates:
-
-| Pointer events | Frames drawn | Editor CPU | CPU per frame |
-| --- | --- | --- | --- |
-| 60 per second | ~93 per second | 27.8% of one core | 2.99 ms |
-| 30 per second | ~61 per second | 17.5% of one core | 2.87 ms |
-
-CPU per frame barely changes, so the cost is a fixed price per frame rather than something
-that amortises: halving the frame rate roughly halves the CPU. egui draws a frame for
-each pointer event and one more for the repaint that follows it, which is why a drag at
-60 events per second costs about 93 frames per second.
-
-That also means the remaining ~2.2 ms is reachable in principle - about 17-18% of a core
-at 60 frames per second - but not from inside this app. eframe 0.31 has no frame-rate cap
-(`NativeOptions` exposes vsync and nothing else, and its renderer ignores egui's repaint
-delay in favour of its own callback), so capping would mean driving winit's event loop
-directly instead of using `eframe::run_native`. If you drag with the editor open, that is
-the trade still on the table.
-
-None of that moved the user-visible number: it was 26-30% before these changes and it is
-26-30% after. The parts attributable to this code are now measured at well under 0.5 ms
-per frame, but they were never the bulk. The remaining ~2.2 ms per frame is inside egui's
-per-frame pipeline and the OpenGL present at ~90-110 Hz. Lowering it would mean capping
-the editor's frame rate, which eframe does not expose, or a smaller window. Closing the
-editor removes it entirely while leaving the overlay running.
+The overlay itself is unaffected by all of this: with the editor closed it still costs
+0.0 ms over minutes of sampling.
 
 To reproduce the idle numbers:
 

@@ -199,8 +199,8 @@ struct Runtime {
     data: Arc<Mutex<AppData>>,
     wake: Arc<dyn Fn() + Send + Sync>,
     surface: Mutex<Option<Surface>>,
-    /// Last rectangle handed to SetWindowPos, so unchanged refreshes skip it.
-    placed: Mutex<Option<(i32, i32, i32, i32)>>,
+    /// Whether the window is currently shown at the crosshair's rectangle.
+    placed: Mutex<bool>,
 }
 
 static RUNTIME: Mutex<Option<Arc<Runtime>>> = Mutex::new(None);
@@ -413,6 +413,25 @@ fn handle_hotkey(id: i32) {
 }
 
 /// Re-render the crosshair and push it to the layered window.
+/// The window's real rectangle, or `None` if the query fails.
+fn window_rect(hwnd: Hwnd) -> Option<(i32, i32, i32, i32)> {
+    let mut rect = Rect {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    if unsafe { GetWindowRect(hwnd, &mut rect) } == 0 {
+        return None;
+    }
+    Some((
+        rect.left,
+        rect.top,
+        rect.right - rect.left,
+        rect.bottom - rect.top,
+    ))
+}
+
 fn refresh(hwnd: Hwnd) {
     let Some(rt) = runtime() else { return };
     let t_start = std::time::Instant::now();
@@ -429,9 +448,9 @@ fn refresh(hwnd: Hwnd) {
         unsafe {
             ShowWindow(hwnd, SW_HIDE);
         }
-        // Forget where the window was, so turning the overlay back on re-places it.
+        // Forget that the window is placed, so turning the overlay back on shows it again.
         if let Ok(mut slot) = rt.placed.lock() {
-            *slot = None;
+            *slot = false;
         }
         return;
     }
@@ -519,21 +538,17 @@ fn refresh(hwnd: Hwnd) {
         let ulw_us = t_render_start.elapsed().as_micros() - render_us;
         let t_swp = std::time::Instant::now();
         // UpdateLayeredWindow already moved and sized the window, and WS_EX_TOPMOST was
-        // set at creation, so SetWindowPos is only needed to show it or to place it when
-        // the crosshair's own rectangle changed. Calling it on every refresh costs more
-        // than the render and the blit together.
+        // set at creation, so SetWindowPos is only needed to show the window or to put it
+        // back when something else moved it. Remembering the last rectangle was not
+        // enough: the OS moves the window behind our back on a resolution or DPI change,
+        // when a display is unplugged, or when it re-stacks windows. Asking for the real
+        // rectangle costs microseconds and makes all of those cases self-healing.
         let geometry = (left, top, width as i32, height as i32);
-        let needs_placement = match rt.placed.lock() {
-            Ok(mut slot) => {
-                let changed = *slot != Some(geometry);
-                if changed {
-                    *slot = Some(geometry);
-                }
-                changed
-            }
-            Err(_) => true,
-        };
-        if needs_placement {
+        let t_rect = std::time::Instant::now();
+        let actual = window_rect(hwnd);
+        let rect_us = t_rect.elapsed().as_micros();
+        let shown = rt.placed.lock().map(|slot| *slot).unwrap_or(false);
+        if !shown || actual != Some(geometry) {
             SetWindowPos(
                 hwnd,
                 HWND_TOPMOST,
@@ -543,12 +558,16 @@ fn refresh(hwnd: Hwnd) {
                 height as i32,
                 SWP_NOACTIVATE | SWP_SHOWWINDOW,
             );
+            if let Ok(mut slot) = rt.placed.lock() {
+                *slot = true;
+            }
         }
         if stats_on() {
             println!(
-                "overlay-ms render={:.3} blit={:.3} swp={:.3} total={:.3}",
+                "overlay-ms render={:.3} blit={:.3} rect={:.3} swp={:.3} total={:.3}",
                 render_us as f64 / 1000.0,
                 ulw_us as f64 / 1000.0,
+                rect_us as f64 / 1000.0,
                 t_swp.elapsed().as_micros() as f64 / 1000.0,
                 t_start.elapsed().as_micros() as f64 / 1000.0
             );
@@ -572,7 +591,10 @@ extern "system" fn wndproc(hwnd: Hwnd, msg: u32, wparam: usize, lparam: isize) -
             }
             0
         }
-        WM_DISPLAYCHANGE => {
+        // A resolution change, a DPI change or a display being plugged in or removed all
+        // invalidate the display list we cache scale and bounds in, so re-enumerate
+        // instead of reusing it.
+        WM_DISPLAYCHANGE | WM_DPICHANGED | WM_SETTINGCHANGE => {
             if let Some(rt) = runtime() {
                 let fresh = enumerate_displays();
                 if let Ok(mut data) = rt.data.lock() {
@@ -708,7 +730,7 @@ pub fn spawn(data: Arc<Mutex<AppData>>, wake: Arc<dyn Fn() + Send + Sync>) -> Ov
                 data,
                 wake,
                 surface: Mutex::new(None),
-                placed: Mutex::new(None),
+                placed: Mutex::new(false),
             });
             if let Ok(mut global) = RUNTIME.lock() {
                 *global = Some(rt.clone());

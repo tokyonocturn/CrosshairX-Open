@@ -294,6 +294,51 @@ pub fn run() -> i32 {
         println!("[FAIL] the crosshair did not move with the offset");
     }
 
+    // ---- placement cache robustness ---------------------------------------
+    // A resolution change, a DPI change or an unplugged display all look the same from
+    // here: the window is no longer where the crosshair belongs. Moving it behind the
+    // app's back is the cheap way to exercise that path.
+    unsafe {
+        SetWindowPos(
+            hwnd,
+            HWND_TOPMOST,
+            target.0 + 300,
+            target.1 + 220,
+            0,
+            0,
+            SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
+    overlay.notify();
+    std::thread::sleep(Duration::from_millis(500));
+    let recovered = count_green(offset_region);
+    println!("[info] green pixels after something moved the window: {recovered}");
+    if recovered > 10 {
+        println!("[ ok ] the overlay returns to its place after being moved externally");
+    } else {
+        failures += 1;
+        println!("[FAIL] the overlay stayed where something else moved it");
+    }
+
+    // The display-change handler must re-enumerate displays and re-place the window
+    // rather than reusing what it cached. Posting the message exercises that path.
+    unsafe {
+        PostMessageW(hwnd, WM_DISPLAYCHANGE, 0, 0);
+    }
+    std::thread::sleep(Duration::from_millis(600));
+    let re_placed = count_green(offset_region);
+    let displays_after = overlay::enumerate_displays().len();
+    println!("[info] green pixels after a display change: {re_placed}");
+    if re_placed > 10 && {
+        let cached = shared.lock().map(|data| data.displays.len()).unwrap_or(0);
+        cached == displays_after
+    } {
+        println!("[ ok ] a display change re-enumerates displays and keeps the crosshair in place");
+    } else {
+        failures += 1;
+        println!("[FAIL] a display change left the overlay or the display list stale");
+    }
+
     // ---- second display --------------------------------------------------
     if displays.len() > 1 {
         let second = displays[1];

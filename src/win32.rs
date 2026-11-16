@@ -128,6 +128,7 @@ pub const HWND_TOPMOST: Hwnd = -1;
 pub const SWP_NOACTIVATE: u32 = 0x0010;
 pub const SWP_SHOWWINDOW: u32 = 0x0040;
 pub const SWP_NOSIZE: u32 = 0x0001;
+pub const SWP_NOZORDER: u32 = 0x0004;
 
 pub const ULW_ALPHA: u32 = 0x0000_0002;
 pub const AC_SRC_OVER: u8 = 0x00;
@@ -139,6 +140,8 @@ pub const SRCCOPY: u32 = 0x00CC_0020;
 pub const WM_DESTROY: u32 = 0x0002;
 pub const WM_CLOSE: u32 = 0x0010;
 pub const WM_DISPLAYCHANGE: u32 = 0x007E;
+pub const WM_DPICHANGED: u32 = 0x02E0;
+pub const WM_SETTINGCHANGE: u32 = 0x001A;
 pub const WM_HOTKEY: u32 = 0x0312;
 pub const WM_APP: u32 = 0x8000;
 pub const WM_APP_REFRESH: u32 = WM_APP + 1;
